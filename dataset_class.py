@@ -2,6 +2,7 @@ import torch
 from numpy import sqrt,argsort,random
 random.seed(42)
 from sklearn.mixture import GaussianMixture
+from matplotlib import pyplot as plt
 
 log_comb = lambda n, k: torch.lgamma(n + 1) - torch.lgamma(k + 1) - torch.lgamma(n - k + 1)
 gaussian_loglike = lambda x, mu, sig: - torch.pow(((x - mu) / sig), 2) / 2  - torch.log(sig) - (1 / 2) * torch.log(torch.tensor(2 * torch.pi)) 
@@ -28,7 +29,7 @@ def Igaussmix_loglike(n,mus,sigs,rhos,unit=False):
         print('should be one     ', torch.exp(lpn).sum() )
     return lpn
 
-def theta2params(theta,components=2):
+def theta2params(theta,components=1):
     mus = torch.exp(theta[:components]).clone()
     sigs = torch.exp(theta[components:2*components]+theta[:components])
     rhos = torch.exp(theta[2*components:]).clone()
@@ -79,7 +80,6 @@ class dataset():
         self.n = torch.arange(self.N)
         
         if cutoff == -1:
-            print(cutoff)
             self.lpkdil_n = counts_loglike(self.counts,self.n,self.dils)
         else:
             lpk_diln_unnorm = counts_loglike(self.counts,self.n,self.dils)
@@ -144,8 +144,7 @@ class dataset():
             torch.autograd.set_detect_anomaly(True)
             keep = True
             i=0
-            while keep: # Number of iterations
-                # Compute the function value at the current point
+            while keep: 
                 l = loss(th)
                 l.backward()
                 optimizer.step()
@@ -168,3 +167,45 @@ class dataset():
 
         self.ev_comp = ev_comp
         return self.ev
+    
+
+    def make_plot(self,filename=None,th_gt=None):
+        l10 = 2.30258509
+        fig,ax = plt.subplots(1,2,figsize=(15,6))
+
+        if torch.all(self.dils == self.dils[0]):
+            ax[0].hist(self.counts.reshape(-1),alpha=.25,bins=15,density=True)
+        else:
+            ax[0].scatter(self.counts.reshape(-1), self.dils.reshape(-1),alpha=.1)
+            ax[0].set_yscale('log')
+            ax[0].set_xlabel('Counts',fontsize=12)
+            ax[0].set_ylabel('Dilution',fontsize=12)
+
+        x = self.n[1:].cpu()
+        m,s,r = [v.cpu() for v in self.ev]
+        p = torch.exp(Igaussmix_loglike(x,m.cpu(),s.cpu(),r.cpu()))
+        y_ev = p*x*l10
+        ax[1].plot(torch.log10(x),y_ev,label=r'Reconstructed $p(n)$')
+        
+        h = ax[1].hist(torch.log10(self.counts*self.dils).reshape(-1),alpha=.25,bins=15,density=True,label=r'Dilution $\times$ Counts')
+        ax[1].set_ylim(0,1.1*(y_ev.max()))
+
+        if not(th_gt is None):        
+            p_gt = torch.exp(Igaussmix_loglike(x,*theta2params(th_gt,th_gt.size(0)//3)))
+            y_gt = p_gt*x*l10
+
+            ax[1].plot(torch.log10(x),y_gt,label=r'Ground truth',color='k')
+            ax[1].set_ylim(0,1.1*max(y_ev.max(),y_gt.max()))
+           
+        ax[1].set_xlim(h[1][0],h[1][-1])
+        
+        ax[1].set_xlabel(r'$\log_{10} n$',fontsize=14)
+        ax[1].set_ylabel('Density')
+        ax[1].legend()
+        
+
+        if not(filename is None):
+            plt.savefig(filename,dpi=500)
+
+        #plt.show()
+        return fig

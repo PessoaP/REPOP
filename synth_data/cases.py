@@ -6,7 +6,7 @@ seed=42
 np.random.seed(seed)
 
 @njit(cache=True)
-def make_data(n_sam):
+def make_data(n_sam,cutoff=50):
     cts = np.zeros_like(n_sam)
     dils = np.zeros_like(n_sam)
     for i in range(n_sam.size):
@@ -14,7 +14,7 @@ def make_data(n_sam):
         dil = 20
         while not(done):
             counts = np.random.binomial(n_sam[i],1/dil)
-            if counts <= 50:
+            if counts <= cutoff:
                 cts[i] = counts
                 dils[i] = dil
                 done=True

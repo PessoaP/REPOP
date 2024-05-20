@@ -6,12 +6,12 @@ seed=42
 np.random.seed(seed)
 
 @njit(cache=True)
-def make_data(n_sam,cutoff=50):
+def make_data(n_sam,cutoff=50,dil0=20):
     cts = np.zeros_like(n_sam)
     dils = np.zeros_like(n_sam)
     for i in range(n_sam.size):
         done = False
-        dil = 20
+        dil = dil0
         while not(done):
             counts = np.random.binomial(n_sam[i],1/dil)
             if counts <= cutoff:
@@ -28,10 +28,12 @@ def make_data(n_sam,cutoff=50):
 
 
 class case():
-    def __init__(self,mus,sigs,rhos,name):
+    def __init__(self,mus,sigs,rhos,name,cutoff=50,dil0=20):
         self.mus,self.sigs,self.rhos = mus, sigs, rhos
         self.n_c = len(rhos)
         self.name=name
+        self.cutoff=cutoff
+        self.dil0=dil0
 
     def sample_n(self,size):
         ind = np.random.choice(len(self.rhos), size, p=self.rhos)
@@ -39,7 +41,7 @@ class case():
     
     def sample_data(self,size):
         n_sam = self.sample_n(size)
-        return make_data(n_sam)
+        return make_data(n_sam,self.cutoff,self.dil0)
     
     def sample_save(self,size):
         cts,dils = self.sample_data(size)
@@ -65,9 +67,13 @@ case4 = case(np.array([15000,12000,7000]),
             np.array([2/6,3/6,1/6]),'case4') #keep
 
 
+case0 = case(np.array([8000]),
+            np.array([500]),
+            np.array([1]),'unimodal',cutoff=1e10,dil0=200) #keep
+
 
 @njit
-def set_seed(value):
+def set_seed(value): #for some reason this needs to be done within njit
     np.random.seed(value)
 
 if __name__ == "__main__":
@@ -78,4 +84,6 @@ if __name__ == "__main__":
     case2.sample_save(N)
     case3.sample_save(N)
     case4.sample_save(N)
+
+    case0.sample_save(N)
 

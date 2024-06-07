@@ -8,8 +8,8 @@ log_comb = lambda n, k: torch.lgamma(n + 1) - torch.lgamma(k + 1) - torch.lgamma
 gaussian_loglike = lambda x, mu, sig: - torch.pow(((x - mu) / sig), 2) / 2  - torch.log(sig) - (1 / 2) * torch.log(torch.tensor(2 * torch.pi)) 
 binomial_loglike = lambda k, n, phi: log_comb(n, k) + k * torch.log(phi) + (n - k) * torch.log(1 - phi)
 poisson_loglike = lambda k,rate: k*torch.log(rate) - rate - torch.lgamma(k+1)
-geometric_loglike = lambda k,p: torch.log(p) + (k-1)*torch.log(1-p)
-
+#geometric_loglike = lambda k,p: torch.log(p) + (k-1)*torch.log(1-p)
+weak_limit = 25
 normalize = lambda x: x/x.sum()
 
 def counts_loglike(k,n,phi):
@@ -29,17 +29,23 @@ def Igaussmix_loglike(n,mus,sigs,rhos,unit=False):
         print('should be one     ', torch.exp(lpn).sum() )
     return lpn
 
-def theta2params(theta,components=1):
+def theta2params(theta,components=weak_limit):
     mus = torch.exp(theta[:components]).clone()
-    sigs = torch.exp(theta[components:2*components]+theta[:components])
+    #sigs = torch.exp(theta[components:2*components]+theta[:components])
+    sigs = torch.exp(theta[components:2*components]).clone()
     rhos = torch.exp(theta[2*components:]).clone()
-    rhos /= rhos.sum()
-    return mus,sigs,rhos
+    return mus,sigs,normalize(rhos)
 
 def params2theta(mus,sigs,rhos):
     return torch.hstack((torch.log(mus),
-                         torch.log(sigs)-torch.log(mus),
+                         #torch.log(sigs)-torch.log(mus),
+                         torch.log(sigs),
                          torch.log(rhos)))
+
+def fixorder(th,components):
+        m,s,r = theta2params(th.clone().detach(),components)
+        ind = torch.argsort(-r)
+        return params2theta(m[ind],s[ind],r[ind])
 
 def dils_switch(dils,N,cutoff):
     n = torch.arange(N)
@@ -61,39 +67,47 @@ def dils_switch(dils,N,cutoff):
 
     return torch.vstack(logZdils)[inverse.reshape(-1)],torch.vstack(pdils)[inverse.reshape(-1)]
 
-def lprior(mus,sigs,rhos,p=.5):
-    if isinstance(rhos, (torch.Tensor)):
-        return geometric_loglike(torch.tensor(rhos.size(0)),torch.tensor(p)) 
-    return geometric_loglike(torch.tensor(rhos.size),torch.tensor(p))  #+rho_prior
 
 
 class dataset():
-    def __init__(self,counts,dils,cutoff=-1,max_comp=10):
+    def __init__(self,counts,dils,cutoff=-1):
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.counts = torch.tensor(counts.reshape(-1,1))
         self.dils = torch.tensor(dils.reshape(-1,1))
-
-        self.max_comp = max_comp
+        self.ndatapoints=self.counts.size(0)
 
         self.ML = (counts*dils).clip(min=1).reshape(-1,1)
-        self.N = 2*(self.ML).max()+1
-
-        self.n = torch.arange(self.N)
+        self.Nmin = min(1,self.ML.min()//2)
+        self.Nmax = 2*self.ML.max()+1
+        self.width = torch.tensor(self.Nmax-self.Nmin,device=self.device)
+        self.n = torch.arange(self.Nmax)
         
         if cutoff == -1:
             self.lpkdil_n = counts_loglike(self.counts,self.n,self.dils)
         else:
             lpk_diln_unnorm = counts_loglike(self.counts,self.n,self.dils)
-            logZ, lpdil_n = dils_switch(self.dils,self.N,cutoff)
+            logZ, lpdil_n = dils_switch(self.dils,self.Nmax,cutoff)
             lpk_diln = lpk_diln_unnorm - logZ + lpdil_n
             self.lpkdil_n = lpk_diln
 
-        #below implements the gpu acceleration if a GPU is available
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.n = self.n.to(self.device)
         self.lpkdil_n = self.lpkdil_n.to(self.device)
 
+        self.alpha = normalize((3/4)**(torch.arange(weak_limit)))
+        self.rhosprior = torch.distributions.Dirichlet(self.alpha.to(self.device)/10000)
+        
+
+    def lprior(self,mus,sigs,rhos,components=weak_limit):
+        lp=torch.zeros_like(mus)
+        mus_shifted = (mus-self.Nmin)/(self.Nmax-self.Nmin)
+        lp = .01*(torch.log(mus_shifted)+torch.log(1-mus_shifted)) -torch.log(self.width)
+        lp += gaussian_loglike(torch.log(sigs),torch.log(mus),torch.ones_like(mus))-torch.log(sigs)
+        if components!=1:
+            return self.rhosprior.log_prob(rhos) + lp.sum()
+        return lp.sum()
+        
     
-    def loglike(self,theta,components=2,total=False):
+    def loglike(self,theta,components,total=False):
         mus,sigs,rhos = theta2params(theta,components)
         lpn_th = Igaussmix_loglike(self.n,mus,sigs,rhos)
         lpkn_th = (lpn_th+self.lpkdil_n)
@@ -102,70 +116,109 @@ class dataset():
             return ans.sum()
         return ans
     
-    def ML_estimate(self,components=-1):
-        ml_comp = []
-        best_logpost = -torch.inf
-        components_iterable = range(1,1+self.max_comp) if (components == -1) else [components]
-        for c in components_iterable:
-            gmm = GaussianMixture(n_components=c, covariance_type='full')
-            gmm.fit(self.ML)
+    def ML_estimate(self,components=weak_limit):
+        
+        gmm = GaussianMixture(n_components=components, covariance_type='full')
+        gmm.fit(self.ML)
 
-            prov_mus = gmm.means_.reshape(-1)
-            prov_sigs = sqrt(gmm.covariances_).reshape(-1)
-            prov_rhos = gmm.weights_
+        prov_mus = gmm.means_.reshape(-1)
+        prov_sigs = sqrt(gmm.covariances_).reshape(-1)
+        prov_rhos = gmm.weights_
 
-            map_est = gmm.score_samples(self.ML).sum() + lprior(prov_mus,prov_sigs,prov_rhos)
-
-            indices = argsort(prov_mus)
-            prov_mus,prov_sigs,prov_rhos = prov_mus[indices],prov_sigs[indices],prov_rhos[indices]
+        indices = argsort(-prov_rhos)
+        prov_mus,prov_sigs,prov_rhos = prov_mus[indices],prov_sigs[indices],prov_rhos[indices]
              
-            ml_comp.append((torch.tensor(prov_mus),torch.tensor(prov_sigs),torch.tensor(prov_rhos)))
-            if map_est>best_logpost:
-                best_logpost = map_est
-                self.ML_estimated = (torch.tensor(prov_mus),torch.tensor(prov_sigs),torch.tensor(prov_rhos))
-        self.ML_all = ml_comp
+        self.ML_estimated = (torch.tensor(prov_mus),torch.tensor(prov_sigs),torch.tensor(prov_rhos))
 
     
 
     
-    def evaluate(self, components=-1,tol=1e-3,lr=.01,observe=True):
-        components_iterable = range(1,1+self.max_comp) if (components == -1) else [components]
+    def evaluate(self, components=weak_limit,tol=1e-5,lr=.05,observe=True):
+        self.alpha = normalize(components+1-torch.arange(components)).to(self.device)
+        self.rhosprior = torch.distributions.Dirichlet(self.alpha.to(self.device)/10)
+
         self.ML_estimate(components)
-        best_logpost = -torch.inf
-        ev_comp=[]
-        for (c,ml_ext_c) in zip(components_iterable,self.ML_all):
-            loss = lambda x: -self.loglike(x,components=c).mean()
+        th = (1.0*params2theta(self.ML_estimated[0],
+                               torch.sqrt(self.ML_estimated[0]),
+                               #self.ML_estimated[1],
+                               self.ML_estimated[2])).to(self.device).requires_grad_(True)
 
-            
-            th = (1.0*params2theta(ml_ext_c[0],ml_ext_c[1]*.7,ml_ext_c[2])).to(self.device).requires_grad_(True)
-
-            optimizer = torch.optim.Adam([th],lr=lr)
-
-            torch.autograd.set_detect_anomaly(True)
-            keep = True
-            i=0
-            while keep: 
-                l = loss(th)
-                l.backward()
-                optimizer.step()
-                
-                with torch.no_grad():
-                    keep = ((th.grad)**2).sum()>tol
-                    i+=1
-                    if observe:
-                        print(f"Iteration {i}, x = {th.detach().cpu().numpy()}, f(x) = {l.item()}")
-
-                optimizer.zero_grad()
-                del l
-
+        loss = lambda x: -self.loglike(x,components).mean()  - self.lprior(*theta2params(x,components),components)/self.ndatapoints
+        optimizer = torch.optim.Adam([th],lr=lr)
+        torch.autograd.set_detect_anomaly(True)
+        
+        keep = True
+        i=0
+        while keep: 
+            l = loss(th)
+            l.backward()
+            optimizer.step()
+               
             with torch.no_grad():
-                map_est = self.loglike(th,components=c).sum() +lprior(*theta2params(th))
-                if map_est > best_logpost:
-                    best_logpost = map_est
-                    self.ev = theta2params(th.clone().detach(),components=c)
-                ev_comp.append(theta2params(th.clone().detach(),components=c))
+                keep = ((th.grad)**2).sum()>tol
+                i+=1
+                if observe and i%10==5:
+                    print(l.item(), self.loglike(th,components).sum().item(),self.lprior(*theta2params(th,components),components))
 
-        self.ev_comp = ev_comp
+                if i%100 == 99:
+
+                    m,s,r = theta2params(th.clone().detach(),components)
+                    ind = r>r.max()/1000
+                    m,s,r = m[ind],s[ind],r[ind]
+                    ind = torch.argsort(-r)
+                    self.ev = m[ind],s[ind],r[ind]
+                
+                    th=(1.0*params2theta(*self.ev)).to(self.device).requires_grad_(True)
+
+                    components=self.ev[0].size(0)
+                    #self.alpha = normalize(components+1-torch.arange(components)).to(self.device)
+                    self.alpha = normalize((3/4)**(torch.arange(components))).to(self.device)
+                    self.rhosprior = torch.distributions.Dirichlet(self.alpha.to(self.device)/10)
+                    loss = lambda x: -self.loglike(x,components).mean()  - self.lprior(*theta2params(x,components),components)/self.ndatapoints
+                    optimizer = torch.optim.Adam([th],lr=lr)
+
+
+
+                    print(self.ev)
+                    print(theta2params(th,components))
+                    print(self.rhosprior.log_prob(theta2params(th,components)[-1]))
+
+            optimizer.zero_grad()
+            
+            del l
+
+        m,s,r = theta2params(th.clone().detach(),components)
+        ind = r>r.max()/100
+        self.ev = m[ind],s[ind],r[ind]
+
+        return self.ev
+    
+        loss = lambda x: -self.loglike(x,components).mean()  #- self.lprior(*theta2params(x,components),components)/self.ndatapoints
+        optimizer = torch.optim.Adam([th],lr=lr/10)
+        
+        keep = True
+        while keep: 
+            l = loss(th)
+            l.backward()
+            optimizer.step()
+               
+            with torch.no_grad():
+                i+=1
+                if observe and i%10==5:
+                    keep = ((th.grad)**2).sum()>tol
+                    print(l.item(), self.loglike(th,components).sum().item(),self.lprior(*theta2params(th,components),components))
+
+                    print(self.ev)
+                    #print(theta2params(th,components))
+                    #print(self.rhosprior.log_prob(theta2params(th,components)[-1]))
+
+            optimizer.zero_grad()
+
+        m,s,r = theta2params(th.clone().detach(),components)
+        ind = r>r.max()/100
+        self.ev = m[ind],s[ind],r[ind]
+        
+        
         return self.ev
     
 

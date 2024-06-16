@@ -1,5 +1,5 @@
 import torch
-from numpy import sqrt,argsort,random
+from numpy import sqrt,argsort,random,unique
 random.seed(42)
 from sklearn.mixture import GaussianMixture
 from matplotlib import pyplot as plt
@@ -8,14 +8,16 @@ log_comb = lambda n, k: torch.lgamma(n + 1) - torch.lgamma(k + 1) - torch.lgamma
 gaussian_loglike = lambda x, mu, sig: - torch.pow(((x - mu) / sig), 2) / 2  - torch.log(sig) - (1 / 2) * torch.log(torch.tensor(2 * torch.pi)) 
 binomial_loglike = lambda k, n, phi: log_comb(n, k) + k * torch.log(phi) + (n - k) * torch.log(1 - phi)
 poisson_loglike = lambda k,rate: k*torch.log(rate) - rate - torch.lgamma(k+1)
-#geometric_loglike = lambda k,p: torch.log(p) + (k-1)*torch.log(1-p)
+
 weak_limit = 25
 normalize = lambda x: x/x.sum()
 
 def counts_loglike(k,n,phi):
-    lp_poi = poisson_loglike(k,n/phi)
     lp_bin = binomial_loglike(k,n,1./phi)
+    lp_poi = poisson_loglike(k,n/phi)
     return torch.where ((n>phi)*(phi>100),lp_poi,lp_bin)
+    #return torch.where ((n/phi<10)*(phi>100),lp_poi,lp_bin)
+
 
 def Igaussmix_loglike(n,mus,sigs,rhos,unit=False):
     terms_unorm = gaussian_loglike(n,mus.reshape(-1,1),sigs.reshape(-1,1))
@@ -79,7 +81,7 @@ class dataset():
         self.ML = (counts*dils).clip(min=1).reshape(-1,1)
         self.Nmin = min(1,self.ML.min()//2)
         self.Nmax = 2*self.ML.max()+1
-        self.width = torch.tensor(self.Nmax-self.Nmin,device=self.device)
+        self.width = torch.tensor(self.Nmax,device=self.device)
         self.n = torch.arange(self.Nmax)
         
         if cutoff == -1:
@@ -93,15 +95,12 @@ class dataset():
         self.n = self.n.to(self.device)
         self.lpkdil_n = self.lpkdil_n.to(self.device)
 
-        self.alpha = normalize((3/4)**(torch.arange(weak_limit)))
-        self.rhosprior = torch.distributions.Dirichlet(self.alpha.to(self.device)/10000)
-        
+   
 
     def lprior(self,mus,sigs,rhos,components=weak_limit):
-        lp=torch.zeros_like(mus)
-        mus_shifted = (mus-self.Nmin)/(self.Nmax-self.Nmin)
+        mus_shifted = (mus-self.Nmin)/self.width
         lp = .01*(torch.log(mus_shifted)+torch.log(1-mus_shifted)) -torch.log(self.width)
-        lp += gaussian_loglike(torch.log(sigs),torch.log(mus),torch.ones_like(mus))-torch.log(sigs)
+        lp += gaussian_loglike(torch.log(sigs),torch.log(mus),torch.ones_like(mus)) - torch.log(sigs)
         if components!=1:
             return self.rhosprior.log_prob(rhos) + lp.sum()
         return lp.sum()
@@ -134,8 +133,9 @@ class dataset():
 
     
     def evaluate(self, components=weak_limit,tol=1e-5,lr=.05,observe=True):
-        self.alpha = normalize(components+1-torch.arange(components)).to(self.device)
-        self.rhosprior = torch.distributions.Dirichlet(self.alpha.to(self.device)/10)
+        self.alpha = normalize((.9)**(torch.arange(components)))
+        self.alpha = self.alpha/self.alpha[-1]
+        self.rhosprior = torch.distributions.Dirichlet(self.alpha.to(self.device)*1.1)
 
         self.ML_estimate(components)
         th = (1.0*params2theta(self.ML_estimated[0],
@@ -158,30 +158,16 @@ class dataset():
                 keep = ((th.grad)**2).sum()>tol
                 i+=1
                 if observe and i%10==5:
-                    print(l.item(), self.loglike(th,components).sum().item(),self.lprior(*theta2params(th,components),components))
+                    print(l.item(), self.loglike(th,components).sum().item(),self.lprior(*theta2params(th,components),components).item())
 
-                if i%100 == 99:
-
+                if i%500 == 98:
                     m,s,r = theta2params(th.clone().detach(),components)
-                    ind = r>r.max()/1000
-                    m,s,r = m[ind],s[ind],r[ind]
                     ind = torch.argsort(-r)
+                    m,s,r = m[ind],s[ind],r[ind]
+                    self.ev = m,s,r
+
+                    ind = r>r.max()/500
                     self.ev = m[ind],s[ind],r[ind]
-                
-                    th=(1.0*params2theta(*self.ev)).to(self.device).requires_grad_(True)
-
-                    components=self.ev[0].size(0)
-                    #self.alpha = normalize(components+1-torch.arange(components)).to(self.device)
-                    self.alpha = normalize((3/4)**(torch.arange(components))).to(self.device)
-                    self.rhosprior = torch.distributions.Dirichlet(self.alpha.to(self.device)/10)
-                    loss = lambda x: -self.loglike(x,components).mean()  - self.lprior(*theta2params(x,components),components)/self.ndatapoints
-                    optimizer = torch.optim.Adam([th],lr=lr)
-
-
-
-                    print(self.ev)
-                    print(theta2params(th,components))
-                    print(self.rhosprior.log_prob(theta2params(th,components)[-1]))
 
             optimizer.zero_grad()
             
@@ -189,37 +175,13 @@ class dataset():
 
         m,s,r = theta2params(th.clone().detach(),components)
         ind = r>r.max()/100
-        self.ev = m[ind],s[ind],r[ind]
+        m,s,r = m[ind],s[ind],r[ind]
+        ind = torch.argsort(-r)
+        self.ev = m[ind],s[ind],normalize(r[ind])
 
         return self.ev
     
-        loss = lambda x: -self.loglike(x,components).mean()  #- self.lprior(*theta2params(x,components),components)/self.ndatapoints
-        optimizer = torch.optim.Adam([th],lr=lr/10)
-        
-        keep = True
-        while keep: 
-            l = loss(th)
-            l.backward()
-            optimizer.step()
-               
-            with torch.no_grad():
-                i+=1
-                if observe and i%10==5:
-                    keep = ((th.grad)**2).sum()>tol
-                    print(l.item(), self.loglike(th,components).sum().item(),self.lprior(*theta2params(th,components),components))
 
-                    print(self.ev)
-                    #print(theta2params(th,components))
-                    #print(self.rhosprior.log_prob(theta2params(th,components)[-1]))
-
-            optimizer.zero_grad()
-
-        m,s,r = theta2params(th.clone().detach(),components)
-        ind = r>r.max()/100
-        self.ev = m[ind],s[ind],r[ind]
-        
-        
-        return self.ev
     
 
     def make_plot(self,filename=None,th_gt=None):
@@ -231,26 +193,32 @@ class dataset():
         p = torch.exp(Igaussmix_loglike(x,m.cpu(),s.cpu(),r.cpu()))
 
         if torch.all(self.dils == self.dils[0]):
-            h = ax[0].hist(self.counts.reshape(-1),alpha=.25,bins=15,density=True,label=r'Dilution $\times$ Counts')
-            ax[0].set_xlabel('Counts',fontsize=12)
+            h = ax[0].hist(self.counts.reshape(-1),alpha=.25,bins=15,density=True)
+            ax[0].set_xlabel('Counts',fontsize=16)
+            ax[0].set_ylabel('Density',fontsize=16)
 
             ax[1].plot(x,p,label=r'Reconstructed $p(n)$')
-            h_high = ax[1].hist((self.counts*self.dils).reshape(-1),alpha=.25,bins=h[1]*(self.dils[0].item()),density=True)
+            h_high = ax[1].hist((self.counts*self.dils).reshape(-1),alpha=.25,bins=h[1]*(self.dils[0].item()),density=True,label=r'Dilution $\times$ Counts')
 
             if not(th_gt is None):        
                 p_gt = torch.exp(Igaussmix_loglike(x,*theta2params(th_gt,th_gt.size(0)//3)))
                 ax[1].plot(x,p_gt,label=r'Ground truth',color='k')
-            ax[1].set_xlim(h_high[1][0],h_high[1][-1])
-            ax[1].set_xlabel(r'$n$',fontsize=14)
-            ax[1].set_ylabel('Density')
+            ax[1].set_xlim(h_high[1][0]*.95,h_high[1][-1]*1.05)
+            ax[1].set_xlabel('Number of microbes',fontsize=16)
+            ax[1].set_ylabel('Density',fontsize=16)
+
+            for axi in ax:
+                axi.ticklabel_format(style='sci', axis='both', scilimits=(0,0), useMathText=True)
+                axi.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, pos: '{:.0f}'.format(x)))
+
 
         else:
             ax[0].scatter(self.counts.reshape(-1), self.dils.reshape(-1),alpha=.1)
             ax[0].set_yscale('log')
-            ax[0].set_xlabel('Counts',fontsize=12)
-            ax[0].set_ylabel('Dilution',fontsize=12)
+            ax[0].set_xlabel('Counts',fontsize=16)
+            ax[0].set_ylabel('Dilution',fontsize=16)
 
-            h = ax[1].hist(torch.log10(self.counts*self.dils).reshape(-1),alpha=.25,bins=15,density=True,label=r'Dilution $\times$ Counts')
+            h = ax[1].hist(torch.log10(self.counts*self.dils).reshape(-1),alpha=.25,bins=30,density=True,label=r'Dilution $\times$ Counts')
             
             y_ev = p*x*l10
             ax[1].plot(torch.log10(x),y_ev,label=r'Reconstructed $p(n)$')
@@ -263,10 +231,13 @@ class dataset():
                 ax[1].plot(torch.log10(x),y_gt,label=r'Ground truth',color='k')
                 ax[1].set_ylim(0,1.1*max(y_ev.max(),y_gt.max()))
             
-            ax[1].set_xlim(h[1][0],h[1][-1])
+            ax[1].set_xlim(h[1][0]*.9,h[1][-1]*1.01)
             
-            ax[1].set_xlabel(r'$\log_{10} n$',fontsize=14)
+            ax[1].set_xlabel(r'$\log_{10} n$',fontsize=16)
             ax[1].set_ylabel('Density')
+        
+
+        
         ax[1].legend()
         plt.tight_layout()
 

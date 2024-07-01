@@ -1,12 +1,12 @@
 import torch
-from numpy import sqrt,argsort,random,unique
+from numpy import sqrt,argsort,random,unique,log10
 random.seed(42)
 from sklearn.mixture import GaussianMixture
 from matplotlib import pyplot as plt
 
 log_comb = lambda n, k: torch.lgamma(n + 1) - torch.lgamma(k + 1) - torch.lgamma(n - k + 1)
 gaussian_loglike = lambda x, mu, sig: - torch.pow(((x - mu) / sig), 2) / 2  - torch.log(sig) - (1 / 2) * torch.log(torch.tensor(2 * torch.pi)) 
-binomial_loglike = lambda k, n, phi: log_comb(n, k) + k * torch.log(phi) + (n - k) * torch.log(1 - phi)
+binomial_loglike = lambda k, n, p: log_comb(n, k) + k * torch.log(p) + (n - k) * torch.log(1 - p)
 poisson_loglike = lambda k,rate: k*torch.log(rate) - rate - torch.lgamma(k+1)
 
 weak_limit = 25
@@ -16,7 +16,6 @@ def counts_loglike(k,n,phi):
     lp_bin = binomial_loglike(k,n,1./phi)
     lp_poi = poisson_loglike(k,n/phi)
     return torch.where ((n>phi)*(phi>100),lp_poi,lp_bin)
-    #return torch.where ((n/phi<10)*(phi>100),lp_poi,lp_bin)
 
 
 def Igaussmix_loglike(n,mus,sigs,rhos,unit=False):
@@ -79,7 +78,7 @@ class dataset():
         self.ndatapoints=self.counts.size(0)
 
         self.ML = (counts*dils).clip(min=1).reshape(-1,1)
-        self.Nmin = min(1,self.ML.min()//2)
+        self.Nmin = 1
         self.Nmax = 2*self.ML.max()+1
         self.width = torch.tensor(self.Nmax,device=self.device)
         self.n = torch.arange(self.Nmax)
@@ -101,6 +100,7 @@ class dataset():
         mus_shifted = (mus-self.Nmin)/self.width
         lp = .01*(torch.log(mus_shifted)+torch.log(1-mus_shifted)) -torch.log(self.width)
         lp += gaussian_loglike(torch.log(sigs),torch.log(mus),torch.ones_like(mus)) - torch.log(sigs)
+        #lp += .2*( torch.log(sigs) - torch.log(mus) ) - sigs/mus*1.2 - torch.log(mus)
         if components!=1:
             return self.rhosprior.log_prob(rhos) + lp.sum()
         return lp.sum()
@@ -128,14 +128,18 @@ class dataset():
         prov_mus,prov_sigs,prov_rhos = prov_mus[indices],prov_sigs[indices],prov_rhos[indices]
              
         self.ML_estimated = (torch.tensor(prov_mus),torch.tensor(prov_sigs),torch.tensor(prov_rhos))
+        return self.ML_estimated
 
     
 
     
-    def evaluate(self, components=weak_limit,tol=1e-5,lr=.05,observe=True):
-        self.alpha = normalize((.9)**(torch.arange(components)))
-        self.alpha = self.alpha/self.alpha[-1]
-        self.rhosprior = torch.distributions.Dirichlet(self.alpha.to(self.device)*1.1)
+    def evaluate(self, components=weak_limit,tol=1e-5,lr=.01,observe=True,dir_factor=.9):
+        #self.alpha = normalize((.9)**(torch.arange(components)))*120
+        self.alpha = normalize((dir_factor)**(torch.arange(components)))
+        self.alpha *=1.1/self.alpha[-1]
+        #self.alpha = 150*((dir_factor)**(torch.arange(components)))
+
+        self.rhosprior = torch.distributions.Dirichlet(self.alpha.to(self.device))
 
         self.ML_estimate(components)
         th = (1.0*params2theta(self.ML_estimated[0],
@@ -183,19 +187,75 @@ class dataset():
     
 
     
+    def dill_hist(self,ax):
+        h = ax.hist(self.counts.reshape(-1),alpha=.25,bins=15,density=True)
+        ax.set_xlabel('Counts',fontsize=12)
+        ax.set_ylabel('Density',fontsize=12)
+        return h
+    
+    def dill_imshow(self,ax,fig):
+            dils = torch.unique(self.dils)
+            g = []
+            for dil in dils[argsort(-dils)]:
+                g_dil = torch.zeros(self.counts.max()+1,dtype=int)
+                k,fk = torch.unique(self.counts[self.dils==dil],return_counts=True)
+                g_dil[k] += fk
+                g.append(g_dil.numpy())
 
+            aspect_ratio = 10  
+            height = len(g)    
+            width = len(g[0])
+
+            extent = [0, width, 0, height * aspect_ratio]
+            yticks = torch.arange(len(dils)) * aspect_ratio + aspect_ratio / 2
+            ax.set_yticks(yticks)
+            ax.set_yticklabels([r' ${:.1f} \times 10^{}$ '.format(val / (10**int(log10(val))),int(log10(val))) for val in dils.numpy().astype(int)])
+            ax.tick_params(axis='y', labelrotation=90, labeltop=True)
+
+            for label in ax.get_yticklabels():
+                label.set_verticalalignment('center')
+            im = ax.imshow(g, extent=extent, aspect='auto')
+            cbar = fig.colorbar(im, ax=ax)
+
+            ax.set_xlabel('Counts',fontsize=12)
+            ax.set_ylabel('Dilution',fontsize=12)
+
+    def log_plots(self,ax,th_gt=None):
+            l10 = 2.30258509
+
+            x = self.n[1:].cpu()
+            m,s,r = [v.cpu() for v in self.ev]
+
+            h = ax.hist(torch.log10(self.counts*self.dils).reshape(-1),alpha=.25,bins=30,density=True,label=r'Dilution $\times$ Counts')
+            
+            p = torch.exp(Igaussmix_loglike(x,m.cpu(),s.cpu(),r.cpu())) 
+            y_ev = p*x*l10
+            ax.plot(torch.log10(x),y_ev,label=r'Reconstructed $p(n)$')
+            ax.set_ylim(0,1.1*(y_ev.max()))
+
+            if not(th_gt is None):        
+                p_gt = torch.exp(Igaussmix_loglike(x,*theta2params(th_gt,th_gt.size(0)//3)))
+                y_gt = p_gt*x*l10
+
+                ax.plot(torch.log10(x),y_gt,label=r'Ground truth',color='k')
+                ax.set_ylim(0,1.1*max(y_ev.max(),y_gt.max()))
+            
+            ax.set_xlim(h[1][0]*.9,h[1][-1]*1.01)
+            
+            ax.set_xlabel(r'$\log_{10}$ (Number of bacteria)',fontsize=12)
+            ax.set_ylabel('Density')
+    
     def make_plot(self,filename=None,th_gt=None):
-        l10 = 2.30258509
-        fig,ax = plt.subplots(1,2,figsize=(15,6))
-
-        x = self.n[1:].cpu()
-        m,s,r = [v.cpu() for v in self.ev]
-        p = torch.exp(Igaussmix_loglike(x,m.cpu(),s.cpu(),r.cpu()))
+        
+        fig,ax = plt.subplots(1,2,figsize=(10,4))    
 
         if torch.all(self.dils == self.dils[0]):
-            h = ax[0].hist(self.counts.reshape(-1),alpha=.25,bins=15,density=True)
-            ax[0].set_xlabel('Counts',fontsize=16)
-            ax[0].set_ylabel('Density',fontsize=16)
+            h = self.dill_hist(ax[0])
+
+
+            x = self.n[1:].cpu()
+            m,s,r = [v.cpu() for v in self.ev]
+            p = torch.exp(Igaussmix_loglike(x,m.cpu(),s.cpu(),r.cpu()))
 
             ax[1].plot(x,p,label=r'Reconstructed $p(n)$')
             h_high = ax[1].hist((self.counts*self.dils).reshape(-1),alpha=.25,bins=h[1]*(self.dils[0].item()),density=True,label=r'Dilution $\times$ Counts')
@@ -204,41 +264,23 @@ class dataset():
                 p_gt = torch.exp(Igaussmix_loglike(x,*theta2params(th_gt,th_gt.size(0)//3)))
                 ax[1].plot(x,p_gt,label=r'Ground truth',color='k')
             ax[1].set_xlim(h_high[1][0]*.95,h_high[1][-1]*1.05)
-            ax[1].set_xlabel('Number of microbes',fontsize=16)
-            ax[1].set_ylabel('Density',fontsize=16)
+            ax[1].set_xlabel('Number of bacteria',fontsize=12)
+            ax[1].set_ylabel('Density',fontsize=12)
 
             for axi in ax:
                 axi.ticklabel_format(style='sci', axis='both', scilimits=(0,0), useMathText=True)
                 axi.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, pos: '{:.0f}'.format(x)))
-
+            ax[1].set_xticks(ax[0].get_xticks()*self.dils[0].item())
 
         else:
-            ax[0].scatter(self.counts.reshape(-1), self.dils.reshape(-1),alpha=.1)
-            ax[0].set_yscale('log')
-            ax[0].set_xlabel('Counts',fontsize=16)
-            ax[0].set_ylabel('Dilution',fontsize=16)
-
-            h = ax[1].hist(torch.log10(self.counts*self.dils).reshape(-1),alpha=.25,bins=30,density=True,label=r'Dilution $\times$ Counts')
-            
-            y_ev = p*x*l10
-            ax[1].plot(torch.log10(x),y_ev,label=r'Reconstructed $p(n)$')
-            ax[1].set_ylim(0,1.1*(y_ev.max()))
-
-            if not(th_gt is None):        
-                p_gt = torch.exp(Igaussmix_loglike(x,*theta2params(th_gt,th_gt.size(0)//3)))
-                y_gt = p_gt*x*l10
-
-                ax[1].plot(torch.log10(x),y_gt,label=r'Ground truth',color='k')
-                ax[1].set_ylim(0,1.1*max(y_ev.max(),y_gt.max()))
-            
-            ax[1].set_xlim(h[1][0]*.9,h[1][-1]*1.01)
-            
-            ax[1].set_xlabel(r'$\log_{10} n$',fontsize=16)
-            ax[1].set_ylabel('Density')
-        
+            self.dill_imshow(ax[0],fig)
+            self.log_plots(ax[1],th_gt)
 
         
-        ax[1].legend()
+
+        [axi.tick_params(axis='both', which='major', labelsize=12) for axi in ax]
+        [axi.yaxis.get_offset_text().set_fontsize(10) for axi in ax ]
+        ax[1].legend(fontsize=10)
         plt.tight_layout()
 
         if not(filename is None):

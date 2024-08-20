@@ -245,7 +245,7 @@ class dataset():
             ax.set_xlabel(r'$\log_{10}$ (Number of bacteria)',fontsize=12)
             ax.set_ylabel('Density')
     
-    def make_plot(self,filename=None,th_gt=None):
+    def make_plot(self,filename=None,th_gt=None,xlabel='real'):
         
         fig,ax = plt.subplots(1,2,figsize=(10,4))    
 
@@ -270,7 +270,8 @@ class dataset():
             for axi in ax:
                 axi.ticklabel_format(style='sci', axis='both', scilimits=(0,0), useMathText=True)
                 axi.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, pos: '{:.0f}'.format(x)))
-            ax[1].set_xticks(ax[0].get_xticks()*self.dils[0].item())
+            if xlabel=='real':
+                ax[1].set_xticks(ax[0].get_xticks()*self.dils[0].item())
 
         else:
             self.dill_imshow(ax[0],fig)
@@ -288,3 +289,7 @@ class dataset():
 
         #plt.show()
         return fig
+    
+def compare_means(base_means,others_ev):
+    v_cutoff, ind = torch.min(torch.abs(others_ev[0]-base_means.reshape(-1,1))/base_means.reshape(-1,1),axis=0)
+    return ((v_cutoff)*others_ev[-1]).sum()

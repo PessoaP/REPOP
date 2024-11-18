@@ -24,9 +24,6 @@ def make_data(n_sam,cutoff=50,dil0=20):
     return cts,dils
 
 
-
-
-
 class case():
     def __init__(self,mus,sigs,rhos,name,cutoff=50,dil0=20):
         self.mus,self.sigs,self.rhos = mus, sigs, rhos
@@ -71,7 +68,13 @@ case0 = case(np.array([8000]),
             np.array([500]),
             np.array([1]),'unimodal',cutoff=1e10,dil0=200) #keep
 
+casem1 = case(np.array([4000,8000,14000]),
+            np.array([200,1500,1000]),
+            np.array([.25,.4,.35]),'multimodal_harder',cutoff=1e10,dil0=200) #keep
 
+casem2 = case(np.array([8000,16000,24000]),
+            np.array([1000,1000,1000]),
+            np.array([.3,.2,.5]),'multimodal_easier',cutoff=1e10,dil0=200) #keep
 @njit
 def set_seed(value): #for some reason this needs to be done within njit
     np.random.seed(value)
@@ -86,4 +89,6 @@ if __name__ == "__main__":
     case4.sample_save(N)
 
     case0.sample_save(N)
+    casem1.sample_save(N)
+    casem2.sample_save(N)
 

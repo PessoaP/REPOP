@@ -32,7 +32,6 @@ def Igaussmix_loglike(n,mus,sigs,rhos,unit=False):
 
 def theta2params(theta,components=weak_limit):
     mus = torch.exp(theta[:components]).clone()
-    #sigs = torch.exp(theta[components:2*components]+theta[:components])
     sigs = torch.exp(theta[components:2*components]).clone()
     rhos = torch.exp(theta[2*components:]).clone()
     return mus,sigs,normalize(rhos)

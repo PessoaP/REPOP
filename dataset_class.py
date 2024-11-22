@@ -14,6 +14,7 @@ normalize = lambda x: x/x.sum()
 
 def counts_loglike(k,n,phi):
     lp_bin = binomial_loglike(k,n,1./phi)
+    return lp_bin
     lp_poi = poisson_loglike(k,n/phi)
     return torch.where ((n>phi)*(phi>100),lp_poi,lp_bin)
 
@@ -38,21 +39,26 @@ def theta2params(theta,components=weak_limit):
 
 def params2theta(mus,sigs,rhos):
     return torch.hstack((torch.log(mus),
-                         #torch.log(sigs)-torch.log(mus),
                          torch.log(sigs),
                          torch.log(rhos)))
 
-def fixorder(th,components):
-        m,s,r = theta2params(th.clone().detach(),components)
-        ind = torch.argsort(-r)
-        return params2theta(m[ind],s[ind],r[ind])
+def logm1exp(x):
+    mask = (x>-1)
+    res = torch.zeros_like(x)
+    res[mask] += torch.log(-torch.expm1(x[mask]))
+    res[~mask] += torch.log1p(-torch.exp(x[~mask]))
+    return res
+
+# def fixorder(th,components):
+#         m,s,r = theta2params(th.clone().detach(),components)
+#         ind = torch.argsort(-r)
+#         return params2theta(m[ind],s[ind],r[ind])
 
 def dils_switch(dils,N,cutoff):
     n = torch.arange(N)
     k = torch.arange(cutoff+1).reshape(-1,1)
 
     dils_unique, inverse = torch.unique(dils,return_inverse=True,sorted=True)
-    #maybe needs change above
     dils_num = dils_unique.size(0)
     logZdils,pdils = [], []
     lp_antes = torch.zeros_like(n)
@@ -60,10 +66,17 @@ def dils_switch(dils,N,cutoff):
     for i in range(dils_num):
         d = dils_unique[i]
         binomial_logZ = torch.logsumexp(counts_loglike(k,n,d),axis=0)
-        binomial_logZ = (1000*binomial_logZ).round()/1000
+        binomial_logZ = torch.clamp(binomial_logZ,max=0)
+        # binomial_logZ = (1000*binomial_logZ).round()/1000
+        # print('binomial_logZ>0',torch.sum(binomial_logZ>0))
+        # print('binomial_logZ.isnan',torch.sum(binomial_logZ.isnan()))
+        # print('binomial_logZ.isinf',torch.sum((binomial_logZ).isinf()))
         logZdils.append(binomial_logZ)
         pdils.append(binomial_logZ+lp_antes)
-        lp_antes += torch.log(1-torch.exp(binomial_logZ))
+        # lp_antes += torch.log(1-torch.exp(binomial_logZ))
+        lp_antes += logm1exp(binomial_logZ)
+        # print('logm1exp(binomial_logZ).isnan',torch.sum(logm1exp(binomial_logZ).isnan()))
+        # print('lp_antes.isnan',torch.sum(lp_antes.isnan()))
 
     return torch.vstack(logZdils)[inverse.reshape(-1)],torch.vstack(pdils)[inverse.reshape(-1)]
 
@@ -99,7 +112,6 @@ class dataset():
         mus_shifted = (mus-self.Nmin)/self.width
         lp = .01*(torch.log(mus_shifted)+torch.log(1-mus_shifted)) -torch.log(self.width)
         lp += gaussian_loglike(torch.log(sigs),torch.log(mus),torch.ones_like(mus)) - torch.log(sigs)
-        #lp += .2*( torch.log(sigs) - torch.log(mus) ) - sigs/mus*1.2 - torch.log(mus)
         if components!=1:
             return self.rhosprior.log_prob(rhos) + lp.sum()
         return lp.sum()
@@ -133,17 +145,14 @@ class dataset():
 
     
     def evaluate(self, components=weak_limit,tol=1e-5,lr=.01,observe=True,dir_factor=.9):
-        #self.alpha = normalize((.9)**(torch.arange(components)))*120
         self.alpha = normalize((dir_factor)**(torch.arange(components)))
-        self.alpha *=1.1/self.alpha[-1]
-        #self.alpha = 150*((dir_factor)**(torch.arange(components)))
+        self.alpha *= 2*1.1/self.alpha[-1]
 
         self.rhosprior = torch.distributions.Dirichlet(self.alpha.to(self.device))
 
         self.ML_estimate(components)
         th = (1.0*params2theta(self.ML_estimated[0],
                                torch.sqrt(self.ML_estimated[0]),
-                               #self.ML_estimated[1],
                                self.ML_estimated[2])).to(self.device).requires_grad_(True)
 
         loss = lambda x: -self.loglike(x,components).mean()  - self.lprior(*theta2params(x,components),components)/self.ndatapoints
@@ -154,8 +163,10 @@ class dataset():
         i=0
         while keep: 
             l = loss(th)
-            l.backward()
-            optimizer.step()
+
+            if ~(torch.isnan(l) | torch.isinf(l)):
+                l.backward()
+                optimizer.step()
                
             with torch.no_grad():
                 keep = ((th.grad)**2).sum()>tol
@@ -163,14 +174,17 @@ class dataset():
                 if observe and i%10==5:
                     print(l.item(), self.loglike(th,components).sum().item(),self.lprior(*theta2params(th,components),components).item())
 
-                if i%500 == 98:
+                if i%500 == 42:
+                    print(th[-components:],torch.exp(th[-components:]).sum())
                     m,s,r = theta2params(th.clone().detach(),components)
                     ind = torch.argsort(-r)
                     m,s,r = m[ind],s[ind],r[ind]
                     self.ev = m,s,r
 
-                    ind = r>r.max()/500
-                    self.ev = m[ind],s[ind],r[ind]
+                    th.data = params2theta(m, s, r).to(self.device)
+                    print(th[-components:],torch.exp(th[-components:]).sum())
+
+
 
             optimizer.zero_grad()
             
@@ -289,6 +303,6 @@ class dataset():
         #plt.show()
         return fig
     
-def compare_means(base_means,others_ev):
-    v_cutoff, ind = torch.min(torch.abs(others_ev[0]-base_means.reshape(-1,1))/base_means.reshape(-1,1),axis=0)
-    return ((v_cutoff)*others_ev[-1]).sum()
+# def compare_means(base_means,others_ev):
+#     v_cutoff, ind = torch.min(torch.abs(others_ev[0]-base_means.reshape(-1,1))/base_means.reshape(-1,1),axis=0)
+#     return ((v_cutoff)*others_ev[-1]).sum()

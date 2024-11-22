@@ -38,7 +38,7 @@ def multinomial_with_completion(n, probs):
 
 
 @njit(cache=True)
-def make_data(n_sam,cutoff=50,dils=20.0*np.power(10,np.arange(4))):
+def make_data(n_sam,cutoff=300,dils=20.0*np.power(10,np.arange(4))):
     cts = np.zeros_like(n_sam)
     dil = np.zeros_like(n_sam)#reported dilution
     probs = 1/dils
@@ -55,7 +55,7 @@ def make_data(n_sam,cutoff=50,dils=20.0*np.power(10,np.arange(4))):
 
 
 class case():
-    def __init__(self,mus,sigs,rhos,name,cutoff=50,dils=20.0*np.power(10,np.arange(4))):
+    def __init__(self,mus,sigs,rhos,name,cutoff=300,dils=20.0*np.power(10,np.arange(4))):
         self.mus,self.sigs,self.rhos = mus, sigs, rhos
         self.n_c = len(rhos)
         self.name=name
@@ -78,18 +78,17 @@ class case():
         df.to_csv('synth_{}.csv'.format(self.name),index=False)
 
 
-case1 = case(np.array([1000,5000,10000]),
-            np.array([100,300,800]),
+case1 = case(6*np.array([1000,5000,10000]),
+            12*np.array([100,300,800]),
             np.array([2/5,1/5,2/5]),'case1') #keep
 
-case2 = case(np.array([1000,5000,15000]),
-            np.array([100,300,1000]),
+case2 = case(6*np.array([1000,5000,15000]),
+            9*np.array([100,300,1000]),
             np.array([1/6,3/6,2/6]),'case2') #new
 
 case3 = case(np.array([1000,2500,7000]),
             np.array([100,300,500]),
             np.array([2/6,3/6,1/6]),'case3') #keep
-
 
 case4 = case(np.array([15000,12000,7000]),
             np.array([3000,1000,500]),
@@ -97,16 +96,16 @@ case4 = case(np.array([15000,12000,7000]),
 
 
 case0 = case(np.array([8000]),
-            np.array([500]),
-            np.array([1]),'unimodal',cutoff=None,dils=200) #keep
+             np.array([500]),
+             np.array([1]),'unimodal',cutoff=None,dils=200) #keep
 
 casem1 = case(np.array([4000,8000,14000]),
-            np.array([200,1500,1000]),
-            np.array([.25,.4,.35]),'multimodal_harder',cutoff=None,dils=200) #keep
+              np.array([200,1500,1000]),
+              np.array([.25,.4,.35]),'multimodal_harder',cutoff=None,dils=200) #keep
 
 casem2 = case(np.array([8000,16000,24000]),
-            np.array([1000,1000,1000]),
-            np.array([.3,.2,.5]),'multimodal_easier',cutoff=None,dils=200) #keep
+              np.array([1000,1000,1000]),
+              np.array([.3,.2,.5]),'multimodal_easier',cutoff=None,dils=200) #keep
 @njit
 def set_seed(value): #for some reason this needs to be done within njit
     np.random.seed(value)

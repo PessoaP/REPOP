@@ -20,9 +20,7 @@ def multinomial_with_completion(n, probs):
     """
     
     sum_probs = probs.sum()
-    if sum_probs > 1:
-        raise ValueError("Probabilities sum to more than 1!")
-    
+   
     # Add missing probability as a new category
     if sum_probs < 1:
         probs = np.append(probs, 1 - sum_probs)
@@ -40,13 +38,13 @@ def multinomial_with_completion(n, probs):
 @njit(cache=True)
 def make_data(n_sam,cutoff=300,dils=20.0*np.power(10,np.arange(4))):
     cts = np.zeros_like(n_sam)
-    dil = np.zeros_like(n_sam)#reported dilution
+    dil = np.zeros_like(n_sam)
     probs = 1/dils
 
     for i in range(n_sam.size):
         #print(dils)
         ks = multinomial_with_completion(n_sam[i], probs)
-        index = np.argmax(ks < cutoff) if np.any(ks < cutoff) else len(ks) - 1
+        index = np.argmax(ks <= cutoff) if np.any(ks <= cutoff) else len(ks) - 1
 
         cts[i] = ks[index]
         dil[i] = dils[index]
@@ -64,35 +62,41 @@ class case():
 
     def sample_n(self,size):
         ind = np.random.choice(len(self.rhos), size, p=self.rhos)
-        return (np.random.normal(self.mus[ind], self.sigs[ind])).round().astype(int)
+        Ns =  (np.random.normal(self.mus[ind], self.sigs[ind])).round().astype(int)
+        while np.any(Ns<=0):
+            Ns[Ns<=0] = self.sample_n((Ns<=0).sum())
+        return Ns
+        
     
-    def sample_data(self,size):
+    def sample_data(self,size=1000000):
         n_sam = self.sample_n(size)
         if isinstance(self.dil_schedule,np.ndarray):
             return make_data(n_sam,self.cutoff,self.dil_schedule)
         return np.random.binomial(n_sam,np.ones_like(n_sam)/self.dil_schedule),np.ones_like(n_sam)*self.dil_schedule
     
-    def sample_save(self,size):
+    def sample_save(self,size=1000000,filename=''):
+        if filename == '':
+            filename = 'synth_{}.csv'.format(self.name)
         cts,dils = self.sample_data(size)
         df = pd.DataFrame({'Counts':cts, 'Dilution':dils})
-        df.to_csv('synth_{}.csv'.format(self.name),index=False)
+        df.to_csv(filename,index=False)
 
 
-case1 = case(6*np.array([1000,5000,10000]),
+case1 = case(np.array([1000,5000,10000]),
+            np.array([100,300,800]),
+            np.array([2/5,1/5,2/5]),'case1',cutoff=50) 
+
+case2 = case(np.array([1000,5000,15000]),
+            np.array([100,300,1000]),
+            np.array([1/6,3/6,2/6]),'case2',cutoff=50) #keep
+
+case3 = case(6*np.array([1000,5000,10000]),
             12*np.array([100,300,800]),
-            np.array([2/5,1/5,2/5]),'case1') #keep
+            np.array([2/5,1/5,2/5]),'case3') #keep
 
-case2 = case(6*np.array([1000,5000,15000]),
+case4 = case(6*np.array([1000,5000,15000]),
             9*np.array([100,300,1000]),
-            np.array([1/6,3/6,2/6]),'case2') #new
-
-case3 = case(np.array([1000,2500,7000]),
-            np.array([100,300,500]),
-            np.array([2/6,3/6,1/6]),'case3') #keep
-
-case4 = case(np.array([15000,12000,7000]),
-            np.array([3000,1000,500]),
-            np.array([2/6,3/6,1/6]),'case4') #keep
+            np.array([1/6,3/6,2/6]),'case4') 
 
 
 case0 = case(np.array([8000]),
@@ -113,13 +117,12 @@ def set_seed(value): #for some reason this needs to be done within njit
 if __name__ == "__main__":
     set_seed(seed)
 
-    N = 1000000
-    case1.sample_save(N)
-    case2.sample_save(N)
-    case3.sample_save(N)
-    case4.sample_save(N)
+    case1.sample_save()
+    case2.sample_save()
+    case3.sample_save()
+    case4.sample_save()
 
-    case0.sample_save(N)
-    casem1.sample_save(N)
-    casem2.sample_save(N)
+    case0.sample_save()
+    casem1.sample_save()
+    casem2.sample_save()
 

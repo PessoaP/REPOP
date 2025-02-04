@@ -5,6 +5,7 @@ from sklearn.mixture import GaussianMixture
 from matplotlib import pyplot as plt
 
 lsqrt2pi = (1 / 2) * log(2 * pi)
+l10 = log(10)
 log_comb = lambda n, k: torch.lgamma(n + 1) - torch.lgamma(k + 1) - torch.lgamma(n - k + 1)
 gaussian_loglike = lambda x, mu, sig: - torch.pow(((x - mu) / sig), 2) / 2  - torch.log(sig) - lsqrt2pi #(1 / 2) * torch.log(torch.tensor(2 * torch.pi)) 
 binomial_loglike = lambda k, n, p: log_comb(n, k) + k * torch.log(p) + (n - k) * torch.log(1 - p)
@@ -31,9 +32,9 @@ def Igaussmix_loglike(n,mus,sigs,rhos,unit=False):
     return lpn
 
 def theta2params(theta,components=weak_limit):
-    mus = torch.exp(theta[:components]).clone()
-    sigs = torch.exp(theta[components:2*components]).clone()
-    rhos = torch.exp(theta[2*components:]).clone()
+    mus = torch.exp(theta[:components])#.clone()
+    sigs = torch.exp(theta[components:2*components])#.clone()
+    rhos = torch.exp(theta[2*components:])#.clone()
     return mus,sigs,normalize(rhos)
 
 def params2theta(mus,sigs,rhos):
@@ -94,6 +95,8 @@ class dataset():
         self.n = self.n.to(self.device)
         self.lpkdil_n = self.lpkdil_n.to(self.device)
 
+        self.weaklimit = min(weak_limit,int(sqrt(self.counts.numel())))
+
    
 
     def lprior(self,mus,sigs,rhos,components=weak_limit):
@@ -133,6 +136,9 @@ class dataset():
 
     
     def evaluate(self, components=weak_limit,tol=1e-5,lr=.01,observe=True,dir_factor=.9):
+        if components == weak_limit:
+            components = self.weaklimit
+        print(components)
         self.alpha = normalize((dir_factor)**(torch.arange(components)))
         self.alpha *= 2.1/self.alpha[-1]
         self.rhosprior = torch.distributions.Dirichlet(self.alpha.to(self.device))
@@ -234,8 +240,7 @@ class dataset():
             ax.set_xlabel('Counts',fontsize=12)
             ax.set_ylabel('Dilution',fontsize=12)
 
-    def log_plots(self,ax,th_gt=None):
-            l10 = 2.30258509
+    def log_plots(self,ax,th_gt=None,log_hist=True):
 
             x = self.n[1:].cpu()
             m,s,r = [v.cpu() for v in self.ev]

@@ -1,11 +1,9 @@
 import numpy as np
 import pandas as pd
-from numba import njit
 
 seed=42
 np.random.seed(seed)
 
-@njit(cache=True)
 def multinomial_with_completion(n, probs):
     """
     Perform a multinomial draw with probabilities that do not sum to 1.
@@ -35,7 +33,7 @@ def multinomial_with_completion(n, probs):
     return samples
 
 
-@njit(cache=True)
+#@njit(cache=True)
 def make_data(n_sam,cutoff=300,dils=20.0*np.power(10,np.arange(4))):
     cts = np.zeros_like(n_sam)
     dil = np.zeros_like(n_sam)
@@ -110,9 +108,7 @@ casem1 = case(np.array([4000,8000,14000]),
 casem2 = case(np.array([8000,16000,24000]),
               np.array([1000,1000,1000]),
               np.array([.3,.2,.5]),'multimodal_easier',cutoff=None,dils=200) #keep
-@njit
-def set_seed(value): #for some reason this needs to be done within njit
-    np.random.seed(value)
+
 
 if __name__ == "__main__":
     set_seed(seed)

@@ -2,7 +2,7 @@
 import torch
 from numpy import sqrt, argsort, random, unique, log10, arange, log, pi
 random.seed(42) 
-from sklearn.mixture import GaussianMixture  # For fitting a Gaussian mixture model
+from sklearn.mixture import GaussianMixture  # For the naive fitting of a Gaussian mixture model
 from matplotlib import pyplot as plt
 
 # Precompute constant values used in the Gaussian likelihood function.
@@ -165,7 +165,7 @@ class dataset():
         A weak prior is imposed on the means (after scaling) and sigmas.
         """
         mus_shifted = (mus - self.Nmin) / self.width
-        lp = 0.01 * (torch.log(mus_shifted) + torch.log(1 - mus_shifted))
+        lp = 0.1 * (torch.log(mus_shifted) + torch.log(1 - mus_shifted))
         lp += gaussian_loglike(torch.log(sigs), torch.log(mus), torch.ones_like(mus)) - torch.log(sigs)
         if components != 1:
             return self.rhosprior.log_prob(rhos) + lp.sum()
@@ -253,20 +253,35 @@ class dataset():
         m, s, r = m[ind], s[ind], r[ind]
         ind = torch.argsort(-r)
         self.ev = (m[ind], s[ind], normalize(r[ind]))
+
         return self.ev
     
     def get_reconstruction(self, narray=None, cpu=True):
         if narray is None:
             x = self.n[1:]
         else:
-            x=narray
+            x = narray
         m, s, r =  self.ev
         p = torch.exp(Igaussmix_loglike(x, m, s, r))
         if cpu:
             x,p = x.cpu(),p.cpu()
         if narray is None:
             return p
-        return narray,p
+        return x,p
+    
+    def get_logreconstruction(self, narray=None, cpu=True, base = 10.):
+        if narray is None:
+            x = self.n[1:]
+        lbase = log(base)
+        x, p = self.get_reconstruction(x,cpu)
+
+        print(x.device,p.device)
+
+        log_narray = torch.log(x)/ lbase
+        p_logspace = p * x * lbase
+
+        return log_narray, p_logspace
+
 
     def dil_hist(self, ax):
         """
@@ -321,17 +336,34 @@ class dataset():
         ax.set_xlabel('Counts', fontsize=12)
         ax.set_ylabel('Dilution', fontsize=12)
 
-    def log_plots(self, ax, th_gt=None, log_hist=True):
+    def real_plots(self, ax, th_gt=None, bins=30):
+        """
+        Plot a histogram of the (dilution x counts) and overlay the reconstructed
+        distribution (p(n)) from the Gaussian mixture model. Optionally, plot the ground truth.
+        """
+        x, p = self.get_reconstruction(cpu=True)
+        ax.plot(x, p, label=r'REPOP')
+        if th_gt is not None:
+            p_gt = torch.exp(Igaussmix_loglike(x, *theta2params(th_gt, th_gt.size(0) // 3)))
+            ax.plot(x, p_gt, label=r'Ground truth', color='k')
+        h_high = ax.hist((self.counts * self.dils).reshape(-1), alpha=0.25,
+                            bins=bins, density=True,
+                            label=r'Dilution $\times$ Counts')
+        
+    def log_plots(self, ax, th_gt=None):
         """
         Plot a histogram of the log10(dilution x counts) and overlay the reconstructed
         distribution (p(n)) from the Gaussian mixture model. Optionally, plot the ground truth.
         """
-        x = self.n[1:].cpu()
-        m, s, r = [v.cpu() for v in self.ev]
-        p = torch.exp(Igaussmix_loglike(x, m.cpu(), s.cpu(), r.cpu()))
-        y_ev = p * x * l10  # scale by x and a constant
+        # x = self.n[1:].cpu()
+        # m, s, r = [v.cpu() for v in self.ev]
+        # p = torch.exp(Igaussmix_loglike(x, m.cpu(), s.cpu(), r.cpu()))
+        # p_logspace = p * x * l10  # scale by x and a constant
+
+        n_logspace,p_logspace = self.get_logreconstruction(cpu=True)
         h = ax.hist(torch.log10((self.counts * self.dils)).clamp(0).reshape(-1),
                     alpha=0.25, bins=30, density=True, label=r'Dilution $\times$ Counts')
+        
         # If any count is zero, color its bin red.
         if torch.any(self.counts == 0):
             bin_edges, patches = h[1], h[2]
@@ -342,16 +374,18 @@ class dataset():
                     patches[i].set_facecolor('blue')
         # Compute the reconstructed distribution using the Gaussian mixture likelihood.
 
-        ax.plot(torch.log10(x), y_ev, label=r'Reconstructed $p(n)$')
-        ax.set_ylim(0, 1.1 * (y_ev.max()))
+        ax.plot(n_logspace, p_logspace, label=r'REPOP')
+        ax.set_ylim(0, 1.1 * (p_logspace.max()))
         if th_gt is not None:
+            x = torch.exp(n_logspace)
             p_gt = torch.exp(Igaussmix_loglike(x, *theta2params(th_gt, th_gt.size(0) // 3)))
             y_gt = p_gt * x * l10
-            ax.plot(torch.log10(x), y_gt, label=r'Ground truth', color='k')
-            ax.set_ylim(0, 1.1 * max(y_ev.max(), y_gt.max()))
+            ax.plot(n_logspace, y_gt, label=r'Ground truth', color='k')
+            ax.set_ylim(0, 1.1 * max(p_logspace.max(), y_gt.max()))
         ax.set_xlim(h[1][0] * 0.9, h[1][-1] * 1.01)
         ax.set_xlabel(r'$\log_{10}$ (Number of bacteria)', fontsize=12)
         ax.set_ylabel('Density')
+
 
     def make_plot(self, filename=None, th_gt=None, xlabel='real'):
         """
@@ -362,18 +396,13 @@ class dataset():
         fig, ax = plt.subplots(1, 2, figsize=(10, 4))
         if torch.all(self.dils == self.dils[0]):
             h = self.dil_hist(ax[0])
-            x, p = self.get_reconstruction(cpu=True)
-            ax[1].plot(x, p, label=r'Reconstructed $p(n)$')
-            if th_gt is not None:
-                p_gt = torch.exp(Igaussmix_loglike(x, *theta2params(th_gt, th_gt.size(0) // 3)))
-                ax[1].plot(x, p_gt, label=r'Ground truth', color='k')
-            h_high = ax[1].hist((self.counts * self.dils).reshape(-1), alpha=0.25,
-                                  bins=h[1] * (self.dils[0].item()), density=True,
-                                  label=r'Dilution $\times$ Counts')
+            self.real_plots(self, ax[1], th_gt, bins = h[1] * (self.dils[0].item()))
+
             ax[1].set_xticks(ax[0].get_xticks() * self.dils[0].item())
             ax[1].set_xlim(ax[0].get_xlim()[0] * self.dils[0].item(), ax[0].get_xlim()[1] * self.dils[0].item())
             ax[1].set_xlabel('Number of bacteria', fontsize=12)
             ax[1].set_ylabel('Density', fontsize=12)
+
         else:
             self.dil_imshow(ax[0], fig)
             self.log_plots(ax[1], th_gt)

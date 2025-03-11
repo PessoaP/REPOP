@@ -301,6 +301,8 @@ class dataset():
             except:
                 pass
             k, fk = torch.unique(self.counts[self.dils == dil], return_counts=True)
+            print('k',k)
+            print('fk',fk)
             g_dil[k] += fk
             g.append(g_dil.numpy())
 

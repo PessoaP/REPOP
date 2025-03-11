@@ -111,7 +111,7 @@ casem2 = case(np.array([8000,16000,24000]),
 
 
 if __name__ == "__main__":
-    set_seed(seed)
+    #set_seed(seed)
 
     case1.sample_save()
     case2.sample_save()

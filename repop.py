@@ -4,6 +4,7 @@ from numpy import sqrt, argsort, random, unique, log10, arange, log, pi
 random.seed(42) 
 from sklearn.mixture import GaussianMixture  # For the naive fitting of a Gaussian mixture model
 from matplotlib import pyplot as plt
+from matplotlib.ticker import ScalarFormatter, AutoLocator
 
 # Precompute constant values used in the Gaussian likelihood function.
 lsqrt2pi = (1 / 2) * log(2 * pi)
@@ -32,7 +33,7 @@ def counts_loglike(k, n, phi):
     lp_bin = binomial_loglike(k, n, 1. / phi)
     return lp_bin
 
-def Igaussmix_loglike(n, mus, sigs, rhos, unit=False):
+def Igaussmix_loglike(n, mus, sigs, rhos):
     """
     Computes the log-likelihood of a Gaussian mixture model at values n.
 
@@ -41,7 +42,6 @@ def Igaussmix_loglike(n, mus, sigs, rhos, unit=False):
       mus: tensor of means for each mixture component.
       sigs: tensor of standard deviations for each component.
       rhos: tensor of mixing proportions for each component.
-      unit: if True, prints diagnostic sums (they should sum to one).
 
     Returns:
       lpn: tensor of log-likelihoods normalized to sum to one.
@@ -55,10 +55,7 @@ def Igaussmix_loglike(n, mus, sigs, rhos, unit=False):
     # Normalize the overall likelihood so that its exponential sums to one.
     lpn = lpn_unorm - torch.logsumexp(lpn_unorm, axis=0)
 
-    if unit:
-        print('should be all ones', torch.exp(terms).sum(axis=1))
-        print('intermediate', torch.logsumexp(lpn_unorm, axis=0))
-        print('should be one     ', torch.exp(lpn).sum())
+
     return lpn
 
 def theta2params(theta, components=weak_limit):
@@ -201,7 +198,7 @@ class dataset():
         self.ML_estimated = (torch.tensor(prov_mus), torch.tensor(prov_sigs), torch.tensor(prov_rhos))
         return self.ML_estimated
 
-    def evaluate(self, components=weak_limit, tol=1e-5, lr=0.01, observe=True, dir_factor=0.9):
+    def evaluate(self, components=weak_limit, tol=1e-5, lr=0.01, observe=True, dir_factor=0.9, component_cut=1/50):
         """
         Optimize the mixture model parameters (theta) by maximizing the data log-likelihood plus prior.
         Uses an Adam optimizer and periodically reorders the parameters.
@@ -249,7 +246,7 @@ class dataset():
             del l
 
         m, s, r = theta2params(th.clone().detach(), components)
-        ind = r > r.max() / 100
+        ind = r > r.max() * component_cut
         m, s, r = m[ind], s[ind], r[ind]
         ind = torch.argsort(-r)
         self.ev = (m[ind], s[ind], normalize(r[ind]))
@@ -260,13 +257,12 @@ class dataset():
         if narray is None:
             x = self.n[1:]
         else:
-            x = narray
+            x = narray*1.
         m, s, r =  self.ev
         p = torch.exp(Igaussmix_loglike(x, m, s, r))
         if cpu:
             x,p = x.cpu(),p.cpu()
-        if narray is None:
-            return p
+
         return x,p
     
     def get_logreconstruction(self, narray=None, cpu=True, base = 10.):
@@ -274,8 +270,6 @@ class dataset():
             x = self.n[1:]
         lbase = log(base)
         x, p = self.get_reconstruction(x,cpu)
-
-        print(x.device,p.device)
 
         log_narray = torch.log(x)/ lbase
         p_logspace = p * x * lbase
@@ -288,8 +282,8 @@ class dataset():
         Plot a histogram of the raw counts (ignoring dilution) on the provided axis.
         """
         h = ax.hist(self.counts.reshape(-1), alpha=0.25, bins=15, density=True)
-        ax.set_xlabel('Counts', fontsize=12)
-        ax.set_ylabel('Density', fontsize=12)
+        ax.set_xlabel('Counts', fontsize=15)
+        ax.set_ylabel('Density', fontsize=15)
         return h
 
     def dil_imshow(self, ax, fig):
@@ -333,8 +327,8 @@ class dataset():
             label.set_verticalalignment('center')
         im = ax.imshow(g, extent=extent, aspect='auto')
         cbar = fig.colorbar(im, ax=ax)
-        ax.set_xlabel('Counts', fontsize=12)
-        ax.set_ylabel('Dilution', fontsize=12)
+        ax.set_xlabel('Counts', fontsize=15)
+        ax.set_ylabel('Dilution', fontsize=15)
 
     def real_plots(self, ax, th_gt=None, bins=30):
         """
@@ -346,7 +340,7 @@ class dataset():
         if th_gt is not None:
             p_gt = torch.exp(Igaussmix_loglike(x, *theta2params(th_gt, th_gt.size(0) // 3)))
             ax.plot(x, p_gt, label=r'Ground truth', color='k')
-        h_high = ax.hist((self.counts * self.dils).reshape(-1), alpha=0.25,
+        h_high = ax.hist((self.counts * self.dils).reshape(-1), alpha=0.5,
                             bins=bins, density=True,
                             label=r'Dilution $\times$ Counts')
         
@@ -361,8 +355,6 @@ class dataset():
         # p_logspace = p * x * l10  # scale by x and a constant
 
         n_logspace,p_logspace = self.get_logreconstruction(cpu=True)
-        h = ax.hist(torch.log10((self.counts * self.dils)).clamp(0).reshape(-1),
-                    alpha=0.25, bins=30, density=True, label=r'Dilution $\times$ Counts')
         
         # If any count is zero, color its bin red.
         if torch.any(self.counts == 0):
@@ -377,13 +369,18 @@ class dataset():
         ax.plot(n_logspace, p_logspace, label=r'REPOP')
         ax.set_ylim(0, 1.1 * (p_logspace.max()))
         if th_gt is not None:
-            x = torch.exp(n_logspace)
+            x = torch.pow(10,n_logspace)
             p_gt = torch.exp(Igaussmix_loglike(x, *theta2params(th_gt, th_gt.size(0) // 3)))
             y_gt = p_gt * x * l10
             ax.plot(n_logspace, y_gt, label=r'Ground truth', color='k')
             ax.set_ylim(0, 1.1 * max(p_logspace.max(), y_gt.max()))
+
+        
+        h = ax.hist(torch.log10((self.counts * self.dils)).clamp(0).reshape(-1),
+                    alpha=0.5, bins=30, density=True, label=r'Dilution $\times$ Counts')
+        
         ax.set_xlim(h[1][0] * 0.9, h[1][-1] * 1.01)
-        ax.set_xlabel(r'$\log_{10}$ (Number of bacteria)', fontsize=12)
+        ax.set_xlabel(r'$\log_{10}$ (Number of bacteria)', fontsize=15)
         ax.set_ylabel('Density')
 
 
@@ -393,15 +390,15 @@ class dataset():
         If the dilution schedule is constant, plot a histogram of counts; otherwise, plot an imshow of dilutions
         alongside log plots. Optionally save the figure to a file.
         """
-        fig, ax = plt.subplots(1, 2, figsize=(10, 4))
+        fig, ax = plt.subplots(1, 2, figsize=(10, 3))
         if torch.all(self.dils == self.dils[0]):
             h = self.dil_hist(ax[0])
-            self.real_plots(self, ax[1], th_gt, bins = h[1] * (self.dils[0].item()))
+            self.real_plots( ax[1], th_gt, bins = h[1] * (self.dils[0].item()))
 
             ax[1].set_xticks(ax[0].get_xticks() * self.dils[0].item())
             ax[1].set_xlim(ax[0].get_xlim()[0] * self.dils[0].item(), ax[0].get_xlim()[1] * self.dils[0].item())
-            ax[1].set_xlabel('Number of bacteria', fontsize=12)
-            ax[1].set_ylabel('Density', fontsize=12)
+            ax[1].set_xlabel('Number of bacteria', fontsize=15)
+            ax[1].set_ylabel('Density', fontsize=15)
 
         else:
             self.dil_imshow(ax[0], fig)
@@ -416,3 +413,17 @@ class dataset():
         if filename is not None:
             plt.savefig(filename, dpi=500)
         return fig
+    
+def plot_sci_not(ax):
+    
+    # Set scientific notation on both axes
+    formatter = ScalarFormatter(useMathText=True)
+    formatter.set_scientific(True)
+    formatter.set_powerlimits((-1, 1))  # Force scientific notation when necessary
+    
+    ax.xaxis.set_major_formatter(formatter)
+    ax.yaxis.set_major_formatter(formatter)
+
+    ax.xaxis.set_major_locator(AutoLocator())
+    ax.yaxis.set_major_locator(AutoLocator())
+    

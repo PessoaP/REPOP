@@ -205,7 +205,7 @@ class dataset():
         """
         if components == weak_limit:
             components = self.weaklimit
-        print(components)
+        #print(components)
         # Define a Dirichlet prior on the mixture weights.
         self.alpha = normalize((dir_factor) ** (torch.arange(components)))
         self.alpha *= 2.1 / self.alpha[-1]
@@ -301,8 +301,6 @@ class dataset():
             except:
                 pass
             k, fk = torch.unique(self.counts[self.dils == dil], return_counts=True)
-            print('k',k)
-            print('fk',fk)
             g_dil[k] += fk
             g.append(g_dil.numpy())
 
@@ -357,18 +355,24 @@ class dataset():
         # p_logspace = p * x * l10  # scale by x and a constant
 
         n_logspace,p_logspace = self.get_logreconstruction(cpu=True)
+        ax.plot(n_logspace, p_logspace, label=r'REPOP')
+        h = ax.hist(torch.log10((self.counts * self.dils)).clamp(0).reshape(-1),
+                    alpha=0.5, bins=30, density=True, label=r'Dilution $\times$ Counts')
         
         # If any count is zero, color its bin red.
         if torch.any(self.counts == 0):
-            bin_edges, patches = h[1], h[2]
+
+            bin_edges = h[1]
+            bin_heights = h[0]
             for i in range(len(bin_edges) - 1):
                 if bin_edges[i] <= 0 < bin_edges[i + 1]:
-                    patches[i].set_facecolor('red')
-                else:
-                    patches[i].set_facecolor('blue')
+                    bin_zero_index = i
+                    break
+
+            ax.bar((bin_edges[bin_zero_index] + bin_edges[bin_zero_index + 1]) / 2, bin_heights[i],
+                width=bin_edges[bin_zero_index + 1] - bin_edges[bin_zero_index], alpha=0.25, color='red')
         # Compute the reconstructed distribution using the Gaussian mixture likelihood.
 
-        ax.plot(n_logspace, p_logspace, label=r'REPOP')
         ax.set_ylim(0, 1.1 * (p_logspace.max()))
         if th_gt is not None:
             x = torch.pow(10,n_logspace)
@@ -377,16 +381,14 @@ class dataset():
             ax.plot(n_logspace, y_gt, label=r'Ground truth', color='k')
             ax.set_ylim(0, 1.1 * max(p_logspace.max(), y_gt.max()))
 
-        
-        h = ax.hist(torch.log10((self.counts * self.dils)).clamp(0).reshape(-1),
-                    alpha=0.5, bins=30, density=True, label=r'Dilution $\times$ Counts')
+
         
         ax.set_xlim(h[1][0] * 0.9, h[1][-1] * 1.01)
         ax.set_xlabel(r'$\log_{10}$ (Number of bacteria)', fontsize=15)
         ax.set_ylabel('Density')
 
 
-    def make_plot(self, filename=None, th_gt=None, xlabel='real'):
+    def make_plot(self, filename=None, th_gt=None, xlabel='real', legend=True):
         """
         Create a combined plot for the dataset.
         If the dilution schedule is constant, plot a histogram of counts; otherwise, plot an imshow of dilutions
@@ -410,7 +412,8 @@ class dataset():
             axi.yaxis.get_offset_text().set_fontsize(10)
             axi.ticklabel_format(style='sci', axis='both', scilimits=(0, 0), useMathText=True)
             axi.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, pos: '{:.0f}'.format(x)))
-        ax[1].legend(fontsize=10)
+        if legend:
+            ax[1].legend(fontsize=10)
         plt.tight_layout()
         if filename is not None:
             plt.savefig(filename, dpi=500)

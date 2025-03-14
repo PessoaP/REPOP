@@ -105,8 +105,8 @@ def dils_switch(dils, N, threshold):
     Returns:
       A tuple (logZdils, pdils) with corrections for each data point.
     """
-    n = torch.arange(N)
-    k = torch.arange(threshold + 1).reshape(-1, 1)
+    n = torch.arange(N).to(dils.device)
+    k = torch.arange(threshold + 1).reshape(-1, 1).to(dils.device)
 
     dils_unique, inverse = torch.unique(dils, return_inverse=True, sorted=True)
     dils_num = dils_unique.size(0)
@@ -395,9 +395,9 @@ class dataset():
             ax.set_ylim(0, 1.1 * max(p_logspace.max(), y_gt.max()))
 
 
-        
         ax.set_xlim(h[1][0] * 0.9, h[1][-1] * 1.01)
-        ax.set_xlabel(r'$\log_{10}$ (Number of bacteria)', fontsize=15)
+        ax.set_xticklabels([rf"$10^{{{int(tick)}}}$" for tick in (ax.get_xticks())])
+        ax.set_xlabel(r'Number of bacteria', fontsize=15)
         ax.set_ylabel('Density')
 
 

@@ -1,0 +1,35 @@
+# **REPOP** - REconstruct POpulations from Plates
+
+## Overview
+
+REPOP is a probabilistic modeling library designed to reconstruct bacterial population distributions from plate counting data. It provides efficient inference methods with built-in uncertainty quantification.
+
+A more detailed explanation is available in our manuscript:  
+**_REPOP: A Tool for Bacterial Population Reconstruction with Uncertainty Quantification from Plate Counts_**  
+(_Link coming soon._)
+
+REPOP is optimized for ease of use and computational efficiency. While it has minimal dependencies, it benefits significantly from GPU acceleration.
+
+## Installation & Dependencies
+
+REPOP requires only a few standard scientific computing libraries:
+
+- `torch`
+- `numpy`
+- `matplotlib`
+- `scikit-learn`
+
+These dependencies ensure a straightforward installation process with no additional complex requirements.
+
+## Usage
+
+### Running the Tutorial
+
+To get started, check out the Jupyter notebook `Tutorial.ipynb`, which demonstrates how to use REPOP with plate counting data.
+
+### Generating Synthetic Data
+
+To generate synthetic data used in the manuscript, navigate to the `synth_data` folder and run:
+
+```bash
+python cases.py

@@ -396,8 +396,9 @@ class dataset():
 
 
         ax.set_xlim(h[1][0] * 0.9, h[1][-1] * 1.01)
-        ax.set_xlabel(r'$\log_{10}$ (Number of bacteria)', fontsize=15)
+        ax.set_xlabel('Number of bacteria', fontsize=15)
         #ax.set_xticklabels([ rf"$10^{{{tick:.1f}}}$" if isinstance(tick, (int, float)) and not isnan(tick) else "" for tick in ax.get_xticks()])
+        ax.xaxis.set_major_formatter(FuncFormatter(lambda x,pos: rf"$10^{{{x:.1f}}}$"))
         ax.set_ylabel('Density')
 
 
@@ -427,7 +428,7 @@ class dataset():
             self.dil_imshow(ax[0], fig)
             self.log_plots(ax[1], th_gt)
 
-            ax[1].set_xlabel('Number of bacteria', fontsize=15)
+            #ax[1].set_xlabel('Number of bacteria', fontsize=15)
             ax[1].set_ylabel('Density', fontsize=15)
 
         if legend:

@@ -4,7 +4,7 @@ from numpy import sqrt, argsort, random, unique, log10, arange, log, pi, isnan
 random.seed(42) 
 from sklearn.mixture import GaussianMixture  # For the naive fitting of a Gaussian mixture model
 from matplotlib import pyplot as plt
-from matplotlib.ticker import ScalarFormatter, AutoLocator
+from matplotlib.ticker import ScalarFormatter, AutoLocator, FuncFormatter
 import warnings
 
 # Precompute constant values used in the Gaussian likelihood function.
@@ -397,7 +397,7 @@ class dataset():
 
         ax.set_xlim(h[1][0] * 0.9, h[1][-1] * 1.01)
         ax.set_xlabel(r'$\log_{10}$ (Number of bacteria)', fontsize=15)
-        ax.set_xticklabels([ rf"$10^{{{tick:.1f}}}$" if isinstance(tick, (int, float)) and not isnan(tick) else "" for tick in ax.get_xticks()])
+        #ax.set_xticklabels([ rf"$10^{{{tick:.1f}}}$" if isinstance(tick, (int, float)) and not isnan(tick) else "" for tick in ax.get_xticks()])
         ax.set_ylabel('Density')
 
 
@@ -426,7 +426,7 @@ class dataset():
         else:
             self.dil_imshow(ax[0], fig)
             self.log_plots(ax[1], th_gt)
-            
+
             ax[1].set_xlabel('Number of bacteria', fontsize=15)
             ax[1].set_ylabel('Density', fontsize=15)
 

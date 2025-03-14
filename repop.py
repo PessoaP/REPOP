@@ -5,6 +5,7 @@ random.seed(42)
 from sklearn.mixture import GaussianMixture  # For the naive fitting of a Gaussian mixture model
 from matplotlib import pyplot as plt
 from matplotlib.ticker import ScalarFormatter, AutoLocator
+import warnings
 
 # Precompute constant values used in the Gaussian likelihood function.
 lsqrt2pi = (1 / 2) * log(2 * pi)
@@ -121,6 +122,17 @@ def dils_switch(dils, N, threshold):
 
     return torch.vstack(logZdils)[inverse.reshape(-1)], torch.vstack(pdils)[inverse.reshape(-1)]
 
+def get_lpkdil_n(counts,dils,n,threshold,Nmax):
+    # Compute the log likelihood for the counts/dilution pairs using either full n range or threshold.
+    if threshold == -1:
+        return counts_loglike(counts, n, dils)
+    else:
+        lpk_diln_unnorm = counts_loglike(counts, n, dils)
+        logZ, lpdil_n = dils_switch(dils, Nmax, threshold)
+        lpk_diln = lpk_diln_unnorm - logZ + lpdil_n
+        return lpk_diln
+        
+
 # The dataset class encapsulates the data along with methods for estimating and reconstructing
 # the underlying bacterial population distribution from plate counts.
 class dataset():
@@ -130,9 +142,9 @@ class dataset():
         # Convert counts and dilutions to column tensors.
         self.counts = torch.tensor(counts.reshape(-1, 1))
         self.dils = torch.tensor(dils.reshape(-1, 1))
+
         self.ndatapoints = self.counts.size(0)
-        if threshold != -1:
-            self.threshold = threshold
+        self.threshold = threshold
 
         # Compute the maximum likelihood (naive) estimate: counts multiplied by the dilution factors.
         self.ML = (counts * dils).clip(min=1).reshape(-1, 1)
@@ -141,17 +153,8 @@ class dataset():
         self.width = torch.tensor(self.Nmax, device=self.device)
         self.n = torch.arange(self.Nmax)
 
-        # Compute the log likelihood for counts given dilution using either full n range or threshold.
-        if threshold == -1:
-            self.lpkdil_n = counts_loglike(self.counts, self.n, self.dils)
-        else:
-            lpk_diln_unnorm = counts_loglike(self.counts, self.n, self.dils)
-            logZ, lpdil_n = dils_switch(self.dils, self.Nmax, threshold)
-            lpk_diln = lpk_diln_unnorm - logZ + lpdil_n
-            self.lpkdil_n = lpk_diln
-
-        self.n = self.n.to(self.device)
-        self.lpkdil_n = self.lpkdil_n.to(self.device)
+        #self.lpkdil_n = get_lpkdil_n(self.counts,self.dils,self.n,threshold,self.Nmax).to(self.device)
+        self.n = self.n.to(self.device)        
 
         # Set the weak limit based on the number of datapoints.
         self.weaklimit = min(weak_limit, int(sqrt(self.counts.numel())))
@@ -198,13 +201,21 @@ class dataset():
         self.ML_estimated = (torch.tensor(prov_mus), torch.tensor(prov_sigs), torch.tensor(prov_rhos))
         return self.ML_estimated
 
-    def evaluate(self, components=weak_limit, tol=1e-5, lr=0.01, observe=True, dir_factor=0.9, component_cut=1/50):
+    def evaluate(self, components=weak_limit, tol=1e-5, lr=0.01, observe=False, dir_factor=0.9, component_cut=1/50):
         """
         Optimize the mixture model parameters (theta) by maximizing the data log-likelihood plus prior.
         Uses an Adam optimizer and periodically reorders the parameters.
         """
+        self.lpkdil_n = get_lpkdil_n(self.counts.to(self.device),
+                                     self.dils.to(self.device),
+                                     self.n.to(self.device),
+                                     self.threshold,self.Nmax).to(self.device)
+
         if components == weak_limit:
-            components = self.weaklimit
+            components = self.weaklimit #If no number of components where specified it will change the smallest number of components between the default and the square root of the number of datapoind
+        if not torch.cuda.is_available():
+            warnings.warn( "CUDA-compatible GPU not detected. REPOP is optimized for working on GPU, and performance may be significantly slower on a CPU." )
+
         #print(components)
         # Define a Dirichlet prior on the mixture weights.
         self.alpha = normalize((dir_factor) ** (torch.arange(components)))
@@ -250,6 +261,8 @@ class dataset():
         m, s, r = m[ind], s[ind], r[ind]
         ind = torch.argsort(-r)
         self.ev = (m[ind], s[ind], normalize(r[ind]))
+
+        del self.lpkdil_n
 
         return self.ev
     
@@ -432,3 +445,6 @@ def plot_sci_not(ax):
     ax.xaxis.set_major_locator(AutoLocator())
     ax.yaxis.set_major_locator(AutoLocator())
     
+
+def set_gt(mus,sigs,rhos):
+    return params2theta(torch.tensor(mus),torch.tensor(sigs),torch.tensor(rhos))

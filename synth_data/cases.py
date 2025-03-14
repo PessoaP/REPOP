@@ -90,11 +90,11 @@ case2 = case(np.array([1000,5000,15000]),
 
 case3 = case(6*np.array([1000,5000,10000]),
             12*np.array([100,300,800]),
-            np.array([2/5,1/5,2/5]),'case3') #keep
+            np.array([2/5,1/5,2/5]),'case3',threshold=300) #keep
 
 case4 = case(6*np.array([1000,5000,15000]),
             9*np.array([100,300,1000]),
-            np.array([1/6,3/6,2/6]),'case4') 
+            np.array([1/6,3/6,2/6]),'case4',threshold=300) 
 
 
 case0 = case(np.array([8000]),

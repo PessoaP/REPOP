@@ -35,8 +35,8 @@ for case in (cases.casem1, cases.casem2):
       axi[0].set_ylabel('{} datapoints'.format(Nmax),fontsize=12)
       axi[0].set_xlabel('')
       
-      del data2.lpkdil_n
-      del data2
+    #   del data2.lpkdil_n
+    #   del data2
 
   ticks = torch.arange(0,cmax+49,50).numpy()
 

@@ -94,7 +94,7 @@ def logm1exp(x):
     res[~mask] += torch.log1p(-torch.exp(x[~mask]))
     return res
 
-def dils_switch(dils, N, threshold):
+def dils_switch(dils, N, cutoff):
     """
     Compute correction terms for the dilution process using a joint binomial framework.
 
@@ -106,7 +106,7 @@ def dils_switch(dils, N, threshold):
       A tuple (logZdils, pdils) with corrections for each data point.
     """
     n = torch.arange(N).to(dils.device)
-    k = torch.arange(threshold + 1).reshape(-1, 1).to(dils.device)
+    k = torch.arange(cutoff + 1).reshape(-1, 1).to(dils.device)
 
     dils_unique, inverse = torch.unique(dils, return_inverse=True, sorted=True)
     dils_num = dils_unique.size(0)
@@ -122,13 +122,13 @@ def dils_switch(dils, N, threshold):
 
     return torch.vstack(logZdils)[inverse.reshape(-1)], torch.vstack(pdils)[inverse.reshape(-1)]
 
-def get_lpkdil_n(counts,dils,n,threshold,Nmax):
-    # Compute the log likelihood for the counts/dilution pairs using either full n range or threshold.
-    if threshold == -1:
+def get_lpkdil_n(counts,dils,n,cutoff,Nmax):
+    # Compute the log likelihood for the counts/dilution pairs using either full n range or cutoff.
+    if cutoff == -1:
         return counts_loglike(counts, n, dils)
     else:
         lpk_diln_unnorm = counts_loglike(counts, n, dils)
-        logZ, lpdil_n = dils_switch(dils, Nmax, threshold)
+        logZ, lpdil_n = dils_switch(dils, Nmax, cutoff)
         lpk_diln = lpk_diln_unnorm - logZ + lpdil_n
         return lpk_diln
         
@@ -136,7 +136,7 @@ def get_lpkdil_n(counts,dils,n,threshold,Nmax):
 # The dataset class encapsulates the data along with methods for estimating and reconstructing
 # the underlying bacterial population distribution from plate counts.
 class dataset():
-    def __init__(self, counts, dils, threshold=-1):
+    def __init__(self, counts, dils, cutoff=-1):
         # Use GPU if available.
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         # Convert counts and dilutions to column tensors.
@@ -144,7 +144,7 @@ class dataset():
         self.dils = torch.tensor(dils.reshape(-1, 1))
 
         self.ndatapoints = self.counts.size(0)
-        self.threshold = threshold
+        self.cutoff = cutoff
 
         # Compute the maximum likelihood (naive) estimate: counts multiplied by the dilution factors.
         self.ML = (counts * dils).clip(min=1).reshape(-1, 1)
@@ -153,7 +153,7 @@ class dataset():
         self.width = torch.tensor(self.Nmax, device=self.device)
         self.n = torch.arange(self.Nmax)
 
-        #self.lpkdil_n = get_lpkdil_n(self.counts,self.dils,self.n,threshold,self.Nmax).to(self.device)
+        #self.lpkdil_n = get_lpkdil_n(self.counts,self.dils,self.n,cutoff,self.Nmax).to(self.device)
         self.n = self.n.to(self.device)        
 
         # Set the weak limit based on the number of datapoints.
@@ -209,7 +209,7 @@ class dataset():
         self.lpkdil_n = get_lpkdil_n(self.counts.to(self.device),
                                      self.dils.to(self.device),
                                      self.n.to(self.device),
-                                     self.threshold,self.Nmax).to(self.device)
+                                     self.cutoff,self.Nmax).to(self.device)
 
         if components == weak_limit:
             components = self.weaklimit #If no number of components where specified it will change the smallest number of components between the default and the square root of the number of datapoind
@@ -307,10 +307,10 @@ class dataset():
         g = []
         # For each unique dilution value (sorted in descending order), compute the histogram of counts.
         for dil in dils[argsort(-dils)]:
-            # Try to use the threshold if available.
+            # Try to use the cutoff if available.
             g_dil = torch.zeros(self.counts.max() + 1, dtype=int)
             try:
-                g_dil = torch.zeros(self.threshold + 1, dtype=int)
+                g_dil = torch.zeros(self.cutoff + 1, dtype=int)
             except:
                 pass
             k, fk = torch.unique(self.counts[self.dils == dil], return_counts=True)
@@ -396,9 +396,8 @@ class dataset():
 
 
         ax.set_xlim(h[1][0] * 0.9, h[1][-1] * 1.01)
-        ax.set_xlabel('Number of bacteria', fontsize=15)
-        #ax.set_xticklabels([ rf"$10^{{{tick:.1f}}}$" if isinstance(tick, (int, float)) and not isnan(tick) else "" for tick in ax.get_xticks()])
-        ax.xaxis.set_major_formatter(FuncFormatter(lambda x,pos: rf"$10^{{{x:.1f}}}$"))
+        ax.set_xlabel(r'$\log_{10}$ (Number of bacteria)', fontsize=15)
+        #ax.xaxis.set_major_formatter(FuncFormatter(lambda x,pos: rf"$10^{{{x:.1f}}}$"))
         ax.set_ylabel('Density')
 
 

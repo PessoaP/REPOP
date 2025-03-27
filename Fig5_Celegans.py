@@ -71,7 +71,8 @@ for i, dt in enumerate(data_day[:4]):
 ym_lin = max(axes[f'lin{i}'].get_ylim()[1] for i in range(4))
 ym_log = max(axes[f'lin{i}'].get_ylim()[1] for i in range(4))
 for i in range(4):
-    axes[f'lin{i}'].set_ylim(0, ym * 1.05)
+    axes[f'lin{i}'].set_ylim(0, ym_lin * 1.05)
+    axes[f'log{i}'].set_ylim(0, ym_log * 1.05)
 
 # %%
 for i in range(4):

@@ -357,7 +357,7 @@ class dataset():
                             bins=bins, density=True,
                             label=r'Dilution $\times$ Counts')
         
-    def log_plots(self, ax, th_gt=None):
+    def log_plots(self, ax, th_gt=None,bins=30):
         """
         Plot a histogram of the log10(dilution x counts) and overlay the reconstructed
         distribution (p(n)) from the Gaussian mixture model. Optionally, plot the ground truth.
@@ -370,7 +370,7 @@ class dataset():
         n_logspace,p_logspace = self.get_logreconstruction(cpu=True)
         ax.plot(n_logspace, p_logspace, label=r'REPOP')
         h = ax.hist(torch.log10((self.counts * self.dils)).clamp(0).reshape(-1),
-                    alpha=0.5, bins=30, density=True, label=r'Dilution $\times$ Counts')
+                    alpha=0.5, bins=bins, density=True, label=r'Dilution $\times$ Counts')
         
         # If any count is zero, color its bin red.
         if torch.any(self.counts == 0):
@@ -380,10 +380,9 @@ class dataset():
             for i in range(len(bin_edges) - 1):
                 if bin_edges[i] <= 0 < bin_edges[i + 1]:
                     bin_zero_index = i
+                    ax.bar((bin_edges[bin_zero_index] + bin_edges[bin_zero_index + 1]) / 2, bin_heights[i],
+                        width=bin_edges[bin_zero_index + 1] - bin_edges[bin_zero_index], alpha=0.25, color='red')
                     break
-
-            ax.bar((bin_edges[bin_zero_index] + bin_edges[bin_zero_index + 1]) / 2, bin_heights[i],
-                width=bin_edges[bin_zero_index + 1] - bin_edges[bin_zero_index], alpha=0.25, color='red')
         # Compute the reconstructed distribution using the Gaussian mixture likelihood.
 
         ax.set_ylim(0, 1.1 * (p_logspace.max()))

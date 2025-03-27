@@ -362,11 +362,6 @@ class dataset():
         Plot a histogram of the log10(dilution x counts) and overlay the reconstructed
         distribution (p(n)) from the Gaussian mixture model. Optionally, plot the ground truth.
         """
-        # x = self.n[1:].cpu()
-        # m, s, r = [v.cpu() for v in self.ev]
-        # p = torch.exp(Igaussmix_loglike(x, m.cpu(), s.cpu(), r.cpu()))
-        # p_logspace = p * x * l10  # scale by x and a constant
-
         n_logspace,p_logspace = self.get_logreconstruction(cpu=True)
         ax.plot(n_logspace, p_logspace, label=r'REPOP')
         h = ax.hist(torch.log10((self.counts * self.dils)).clamp(0).reshape(-1),

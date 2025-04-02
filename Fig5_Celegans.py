@@ -41,10 +41,10 @@ for day in days:
 
 # %%
 layout = [
-    ['lin0','lin0', 'log0', 'log0', 'log0'],
-    ['lin1','lin1', 'log1', 'log1', 'log1'],
-    ['lin2','lin2', 'log2', 'log2', 'log2'],
-    ['lin3','lin3', 'log3', 'log3', 'log3']
+    ['lin0', 'log0', 'log0'],
+    ['lin1', 'log1', 'log1'],
+    ['lin2', 'log2', 'log2'],
+    ['lin3', 'log3', 'log3']
 ]
 fig, axes = plt.subplot_mosaic(layout, figsize=(8, 6))
 
@@ -69,10 +69,10 @@ for i, dt in enumerate(data_day[:4]):
 
 
 ym_lin = max(axes[f'lin{i}'].get_ylim()[1] for i in range(4))
-ym_log = max(axes[f'lin{i}'].get_ylim()[1] for i in range(4))
+ym_log = max(axes[f'log{i}'].get_ylim()[1] for i in range(4))
 for i in range(4):
-    axes[f'lin{i}'].set_ylim(0, ym_lin * 1.05)
-    axes[f'log{i}'].set_ylim(0, ym_log * 1.05)
+    axes[f'lin{i}'].set_ylim(0, ym_lin * 1.1)
+    axes[f'log{i}'].set_ylim(0, ym_log * 1.1)
 
 # %%
 for i in range(4):

@@ -16,10 +16,14 @@ REPOP is optimized for ease of use and computational efficiency. While it has mi
 
 ## Installation & Dependencies
 
+To install REPOP, simply clone the repository and run:
+
+```bash
+pip install .
+```
+
 REPOP requires only a few standard scientific computing libraries:
-
 - `torch`, `numpy`, `matplotlib`, `scikit-learn`
-
 These dependencies ensure a straightforward installation process with no additional complex requirements.
 
 ## Usage

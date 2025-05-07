@@ -15,7 +15,7 @@ setup(
     long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
     url="https://github.com/PessoaP/REPOP",
-    license="LICENSE",
+    license="CC-BY-NC-4.0",
     classifiers=[
         "Programming Language :: Python :: 3",
         "Operating System :: OS Independent",

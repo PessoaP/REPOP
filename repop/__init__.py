@@ -36,26 +36,29 @@ def counts_loglike(k, n, phi):
 
 def Igaussmix_loglike(n, mus, sigs, rhos):
     """
-    Computes the log-likelihood of a Gaussian mixture model at values n.
+    Computes the normalized log likelihood over values `n` for a Gaussian mixture model.
 
     Parameters:
-      n: tensor of indices at which to evaluate the likelihood.
-      mus: tensor of means for each mixture component.
-      sigs: tensor of standard deviations for each component.
-      rhos: tensor of mixing proportions for each component.
+      n: tensor of values to evaluate (e.g., indices or data points)
+      mus: means of the Gaussian components (shape: [components])
+      sigs: standard deviations of the components (shape: [components])
+      rhos: mixture weights (shape: [components])
 
     Returns:
-      lpn: tensor of log-likelihoods normalized to sum to one.
+      lpn: log probability at each n, normalized to sum to one (shape: [n])
     """
-    # Compute unnormalized log likelihood for each component over n.
+    # Reshape mus and sigs to shape [components, 1] so that broadcasting works:
+    # each row is a component, each column is a value of `n`
     terms_unorm = gaussian_loglike(n, mus.reshape(-1, 1), sigs.reshape(-1, 1))
-    # Normalize the likelihood of each component over n.
-    terms = terms_unorm - torch.logsumexp(terms_unorm, axis=1).reshape(-1, 1)
-    # Compute the overall log likelihood for each n via a weighted sum over components.
-    lpn_unorm = torch.logsumexp(terms + torch.log(rhos.reshape(-1, 1)), axis=0)
-    # Normalize the overall likelihood so that its exponential sums to one.
-    lpn = lpn_unorm - torch.logsumexp(lpn_unorm, axis=0)
 
+    # Normalize each row (i.e., each component) across n values
+    terms = terms_unorm - torch.logsumexp(terms_unorm, axis=1).reshape(-1, 1)
+
+    # Add log of mixing weights (reshaped to [components, 1] to match n columns)
+    lpn_unorm = torch.logsumexp(terms + torch.log(rhos.reshape(-1, 1)), axis=0)
+
+    # Normalize final log likelihood across all n (log-probability over `n`)
+    lpn = lpn_unorm - torch.logsumexp(lpn_unorm, axis=0)
 
     return lpn
 
@@ -96,17 +99,23 @@ def logm1exp(x):
 
 def dils_switch(dils, N, cutoff):
     """
-    Compute correction terms for the dilution process using a joint binomial framework.
+    Computes correction terms for truncated binomial likelihoods using dilution factors.
 
-    For each unique dilution value in 'dils', this function computes:
-      - binomial_logZ: a log partition function (clamped to be at most 0)
-      - pdils: cumulative probability terms from previous dilutions.
+    Parameters:
+      dils: dilution factors (tensor of shape [batch])
+      N: number of trials
+      cutoff: maximum number of successes to consider in the truncated model
 
     Returns:
-      A tuple (logZdils, pdils) with corrections for each data point.
+      logZdils: per-example log partition function (shape [batch])
+      pdils: per-example cumulative correction term (shape [batch])
     """
-    n = torch.arange(N).to(dils.device)
-    k = torch.arange(cutoff + 1).reshape(-1, 1).to(dils.device)
+    n = torch.arange(N).to(dils.device)  # shape: [N]
+    k = torch.arange(cutoff + 1).reshape(-1, 1).to(dils.device)  # shape: [cutoff+1, 1]
+
+    # Here k is treated as the row (different values), and n as the column (broadcasting over trials)
+    # counts_loglike(k, n, d) will broadcast over k and n as 2D arrays:
+    # returns a [cutoff+1, N] tensor
 
     dils_unique, inverse = torch.unique(dils, return_inverse=True, sorted=True)
     dils_num = dils_unique.size(0)
@@ -115,15 +124,32 @@ def dils_switch(dils, N, cutoff):
 
     for i in range(dils_num):
         d = dils_unique[i]
+
+        # For each dilution factor, evaluate log-likelihood over grid of (k, n)
+        # This yields a matrix where columns correspond to values of n, for each k
         binomial_logZ = torch.clamp(torch.logsumexp(counts_loglike(k, n, d), axis=0), max=0)
+
         logZdils.append(binomial_logZ)
         pdils.append(binomial_logZ + lp_antes)
         lp_antes += logm1exp(binomial_logZ)
 
+    # Map back to original data order using `inverse`, stacking along batch dimension
     return torch.vstack(logZdils)[inverse.reshape(-1)], torch.vstack(pdils)[inverse.reshape(-1)]
 
-def get_lpkdil_n(counts,dils,n,cutoff,Nmax):
-    # Compute the log likelihood for the counts/dilution pairs using either full n range or cutoff.
+def get_lpkdil_n(counts, dils, n, cutoff, Nmax):
+    """
+    Computes corrected log likelihoods for (counts, dilution) pairs under optional truncation.
+
+    Parameters:
+      counts: observed count data
+      dils: dilution factors for each data point
+      n: number of trials
+      cutoff: if -1, no correction; otherwise, use cutoff as truncation
+      Nmax: maximum number of trials (for correction)
+
+    Returns:
+      lpk_diln: corrected log likelihoods
+    """
     if cutoff == -1:
         return counts_loglike(counts, n, dils)
     else:
@@ -131,7 +157,6 @@ def get_lpkdil_n(counts,dils,n,cutoff,Nmax):
         logZ, lpdil_n = dils_switch(dils, Nmax, cutoff)
         lpk_diln = lpk_diln_unnorm - logZ + lpdil_n
         return lpk_diln
-        
 
 # The dataset class encapsulates the data along with methods for estimating and reconstructing
 # the underlying bacterial population distribution from plate counts.

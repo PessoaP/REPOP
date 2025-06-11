@@ -40,14 +40,15 @@ python cases.py
 ```
 
 ## Citation
-If you find our software or research helpful in your work, please consider citing the companion paper:
+If you find our software or research helpful in your work, please consider citing our paper:
 ```
 @article {Pessoa2025repop,
 	author = {Pessoa, Pedro and Lu, Carol and Tashev, Stanimir Asenov and Kruithoff, Rory and Shepherd, Douglas P. and Press{\'e}, Steve},
 	title = {REPOP: bacterial population quantification from plate counts},
 	elocation-id = {2025.04.01.644179},
+	journal = {bioRxiv},
 	year = {2025},
-	doi = {10.1101/2025.04.01.644179},
+	doi = {10.1101/2025.04.01.644179}
 }
 ```
 ### Generating Graphs in the manuscript

@@ -6,7 +6,7 @@ REPOP is a probabilistic modeling library designed to reconstruct bacterial popu
 
 A more detailed explanation is available in our manuscript:  
 **_REPOP: A Tool for Bacterial Population Reconstruction with Uncertainty Quantification from Plate Counts_**  
-[Available as a preprint on BioRxiv](https://www.biorxiv.org/content/10.1101/2025.04.01.644179v1)
+[Available on eLife](https://doi.org/10.7554/eLife.107122.1)
 
 <div style="background-color:white; display:inline-block; padding:10px;">
 <img src="https://github.com/PessoaP/REPOP/blob/main/graphs/fig1.jpg?raw=true" width="600"/>
@@ -45,10 +45,10 @@ If you find our software or research helpful in your work, please consider citin
 @article {Pessoa2025repop,
 	author = {Pessoa, Pedro and Lu, Carol and Tashev, Stanimir Asenov and Kruithoff, Rory and Shepherd, Douglas P. and Press{\'e}, Steve},
 	title = {REPOP: bacterial population quantification from plate counts},
-	elocation-id = {2025.04.01.644179},
-	journal = {bioRxiv},
+	journal = {eLife},
+	publisher = {eLife Sciences Publications, Ltd},
 	year = {2025},
-	doi = {10.1101/2025.04.01.644179}
+	doi = {10.7554/elife.107122.1}
 }
 ```
 ### Generating Graphs in the manuscript

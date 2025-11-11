@@ -13,23 +13,8 @@ l10 = log(10)
 
 # Define lambda functions for common probability calculations.
 # log_comb computes the log of the binomial coefficient.
-def log_comb(n_row, k_col):
-    """
-    Computes log binomial coefficients log(comb(n, k)) for all (k, n).
-    Using the identity: log C(n, k) = sum_{j=0}^{k-1} log(n - j) - sum_{m=1}^k log(m)
-    Safe masking avoids log of non-positive when k > n; those pairs -> -inf.
-    """
-        
-    j = torch.arange(k_col.max()+1, device=n_row.device)
-    nmj = n_row - j[:-1].reshape(-1, 1)
-
-    terms_all = torch.where(nmj > 0, torch.log(nmj), torch.tensor(-float('inf'), device=n_row.device))
-
-    terms_cumsum = torch.cumsum(terms_all, dim=0)     # (len(j), len(n_row))
-    j_cumsum     = torch.cumsum(torch.log(j[1:]), dim=0).reshape(-1, 1)  # logs of 1..k
-
-    out = torch.vstack((torch.zeros_like(n_row),(terms_cumsum-j_cumsum)))
-    return (out[k_col.reshape(-1)]).contiguous()
+from scipy.special import loggamma #Scipy loggamma was found to be more stable
+log_comb = lambda n, k: torch.tensor(loggamma(n.cpu().numpy()+1) -loggamma(k.cpu().numpy()+1) -loggamma((n-k).cpu().numpy()+1)).to(n.device)
 
 # binomial_loglike computes the log likelihood for a binomial outcome.
 binomial_loglike = lambda k, n, p: log_comb(n, k) + k * torch.log(p) + (n - k) * torch.log(1 - p)
@@ -474,7 +459,7 @@ class dataset():
         return fig
     
 def plot_sci_not(ax):
-    
+
     # Set scientific notation on both axes
     formatter = ScalarFormatter(useMathText=True)
     formatter.set_scientific(True)

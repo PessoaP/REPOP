@@ -295,7 +295,7 @@ class dataset():
     
     def get_reconstruction(self, narray=None, cpu=True):
         if narray is None:
-            x = self.n[1:]
+            x = self.n
         else:
             x = narray*1.
         m, s, r =  self.ev
@@ -307,11 +307,13 @@ class dataset():
     
     def get_logreconstruction(self, narray=None, cpu=True, base = 10.):
         if narray is None:
-            x = self.n[1:]
+            x = self.n
+            mask = x>0
         lbase = log(base)
         x, p = self.get_reconstruction(x,cpu)
 
         log_narray = torch.log(x)/ lbase
+
         p_logspace = p * x * lbase
 
         return log_narray, p_logspace

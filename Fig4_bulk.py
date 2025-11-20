@@ -58,7 +58,7 @@ m,s,r = [d[:4].cpu() for d in data.ev]
 r=r/r.sum()
 cs = cases.case(m.numpy(),s.numpy(),r.numpy(),'Case redone')
 
-cts,dils = cs.sample_data(size=500)
+cts,dils = cs.sample_data(size=750)
 
 data_synth =  dataset(cts,dils,cutoff=300)
 data_synth.evaluate()

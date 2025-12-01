@@ -12,8 +12,9 @@ from scipy.special import gammaln
 
 def sp_lgamma(t: torch.Tensor) -> torch.Tensor:
     """
-    SciPy-backed replacement for torch.lgamma. (lgamma has issues)
-    Detaches to CPU for gammaln, then returns a tensor on the same device/dtype.
+    SciPy-backed replacement for torch.lgamma. (torch.lgamma was not stable in the values we needed has issues)
+    Detaches to CPU for gammaln, then returns a tensor on the same device/dtype. 
+    This is based on the fact that we only use log_comb once, when processing data, so the CPU use would be minimal.
     """
     y = gammaln(t.detach().cpu().numpy())
     return torch.from_numpy(y).to(device=t.device, dtype=t.dtype)
@@ -29,8 +30,6 @@ log_comb = lambda n, k: sp_lgamma(n + 1) - sp_lgamma(k + 1) - sp_lgamma(n - k + 
 binomial_loglike = lambda k, n, p: log_comb(n, k) + k * torch.log(p) + (n - k) * torch.log(1 - p)
 # gaussian_loglike computes the log likelihood of a Gaussian given data x, mean mu, and std dev sig.
 gaussian_loglike = lambda x, mu, sig: - torch.pow(((x - mu) / sig), 2) / 2 - torch.log(sig) - lsqrt2pi
-# poisson_loglike computes the log likelihood for a Poisson outcome.
-poisson_loglike = lambda k, rate: k * torch.log(rate) - rate - sp_lgamma(k + 1)
 
 # Set a weak limit constant, used later in parameter estimation.
 weak_limit = 25
@@ -184,7 +183,7 @@ class dataset():
 
         # Compute the maximum likelihood (naive) estimate: counts multiplied by the dilution factors.
         self.ML = (counts * dils).clip(min=1).reshape(-1, 1)
-        self.Nmin = 0
+        self.Nmin = 1
         self.Nmax = 2 * self.ML.max() + 1
         self.width = torch.tensor(self.Nmax, device=self.device)
         self.n = torch.arange(self.Nmax)
@@ -200,11 +199,9 @@ class dataset():
         Compute a log-prior over the mixture parameters.
         A weak prior is imposed on the means (after scaling) and sigmas.
         """
-        eps = 1e-6
-        mus_shifted = torch.clamp((mus - self.Nmin) / self.width, eps, 1 - eps)
-        lp = 0.1 * (torch.log(mus_shifted) + torch.log(1 - mus_shifted))
-        mus_safe = torch.clamp(mus, min=eps)
-        lp += gaussian_loglike(torch.log(sigs), torch.log(mus_safe), torch.ones_like(mus_safe)) - torch.log(sigs)
+        mus_shifted = (mus - self.Nmin) / self.width
+        lp = 0.1 * (torch.log(mus_shifted) + torch.log(1 - mus_shifted)) #logprior
+        lp += gaussian_loglike(torch.log(sigs), torch.log(mus), torch.ones_like(mus)) - torch.log(sigs)
         if components != 1:
             return self.rhosprior.log_prob(rhos) + lp.sum()
         return lp.sum()
@@ -240,7 +237,7 @@ class dataset():
         indices = argsort(-prov_rhos)
         prov_mus, prov_sigs, prov_rhos = prov_mus[indices], prov_sigs[indices], prov_rhos[indices]
 
-        self.ML_estimated = (torch.tensor(prov_mus).clip(self.Nmin+.01), torch.tensor(prov_sigs), torch.tensor(prov_rhos))  # make sure the Gaussian mixture model is not negative
+        self.ML_estimated = (torch.tensor(prov_mus), torch.tensor(prov_sigs), torch.tensor(prov_rhos))  # make sure the Gaussian mixture model is not negative
         return self.ML_estimated
 
     def evaluate(self, components=weak_limit, tol=1e-5, lr=0.01, observe=False, dir_factor=0.9, component_cut=1/50):
@@ -319,7 +316,7 @@ class dataset():
             x, p = x.cpu(), p.cpu()
         return x, p
     
-    def get_logreconstruction(self, narray=None, cpu=True, base=10.):
+    def get_logreconstruction(self, narray=None, cpu=True, base=10.,show_zero=False):
         lbase = log(base)
 
         # First get the full discrete pmf including n=0
@@ -335,15 +332,17 @@ class dataset():
         x_pos = x_full[mask_pos]
         p_pos = p_full[mask_pos]
 
-        # Save the mass at n = 0
-        p0 = p_full[~mask_pos].sum()  # should just be a scalar
 
         # Log-space transform for n >= 1
         log_narray = torch.log(x_pos) / lbase
         p_logspace = p_pos * x_pos * lbase
 
         # Return log-space stuff plus p0 so plotting code can use it
-        return log_narray, p_logspace, float(p0)
+        if show_zero:
+            # Save the mass at n = 0
+            p0 = p_full[~mask_pos].sum()  # should just be a scalar
+            return log_narray, p_logspace, (p0.item())
+        return log_narray, p_logspace,
 
 
 
@@ -414,9 +413,13 @@ class dataset():
                             bins=bins, density=True,
                             label=r'Dilution $\times$ Counts')
         
-    def log_plots(self, ax, th_gt=None, bins=30):
+    def log_plots(self, ax, th_gt=None, bins=30, show_zero=False):
         # Get reconstruction in log-space + mass at zero
-        n_logspace, p_logspace, p0 = self.get_logreconstruction(cpu=True)
+        if show_zero:
+            n_logspace, p_logspace, p0 = self.get_logreconstruction(cpu=True, show_zero=show_zero)
+        else:
+            n_logspace, p_logspace = self.get_logreconstruction(cpu=True, show_zero=show_zero)
+            p0 = None
 
         # Plot the reconstructed density over log10(n) for n >= 1
         ax.plot(n_logspace, p_logspace, label=r'REPOP')
@@ -447,7 +450,7 @@ class dataset():
                     break
 
         # NEW: show P(N=0) as a separate marker
-        if p0 > 0:
+        if p0 is not None and p0 > 0:
             # Put it slightly to the left of the plotted domain
             x_marker = n_logspace.min() - 0.3  # shift left a bit
             ax.scatter([x_marker], [p0], marker='o')
@@ -461,7 +464,9 @@ class dataset():
                 fontsize=8
             )
 
-        ax.set_ylim(0, 1.1 * max(p_logspace.max(), p0 if p0 > 0 else 0.0))
+            ax.set_ylim(0, 1.1 * max(p_logspace.max(), p0 if p0 > 0 else 0.0))
+        else:
+            ax.set_ylim(0, 1.1 * p_logspace.max())
 
         if th_gt is not None:
             # Ground truth, only for n >= 1; that's fine.
@@ -471,14 +476,7 @@ class dataset():
             )
             y_gt = p_gt * x_pos * log(10.0)
             ax.plot(n_logspace, y_gt, label=r'Ground truth', color='k')
-            ax.set_ylim(
-                0,
-                1.1 * max(
-                    p_logspace.max(),
-                    y_gt.max(),
-                    p0 if p0 > 0 else 0.0
-                )
-            )
+            ax.set_ylim(0,1.1 * max(p_logspace.max(),y_gt.max(),p0 if p0 > 0 else 0.0))
 
         ax.set_xlim(h[1][0] * 0.9, h[1][-1] * 1.01)
         ax.set_xlabel(r'$\log_{10}$ (Number of bacteria)', fontsize=15)

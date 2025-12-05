@@ -123,7 +123,7 @@ class dataset():
 
         # Compute the maximum likelihood (naive) estimate: counts multiplied by the dilution factors.
         self.ML = (counts * dils).clip(min=1).reshape(-1, 1)
-        self.Nmin = 1
+        self.Nmin = 0
         self.Nmax = 2 * self.ML.max() + 1
         self.width = torch.tensor(self.Nmax, device=self.device)
         self.n = torch.arange(self.Nmax)
@@ -139,9 +139,13 @@ class dataset():
         Compute a log-prior over the mixture parameters.
         A weak prior is imposed on the means (after scaling) and sigmas.
         """
-        mus_shifted = (mus - self.Nmin) / self.width
+        eps = 1e-6
+        mus_shifted = torch.clamp((mus - self.Nmin) / self.width, eps, 1 - eps)
+
         lp = 0.1 * (torch.log(mus_shifted) + torch.log(1 - mus_shifted)) #logprior
-        lp += gaussian_loglike(torch.log(sigs), torch.log(mus), torch.ones_like(mus)) - torch.log(sigs)
+        mus_safe = torch.clamp(mus, min=eps)
+        lp += gaussian_loglike(torch.log(sigs), torch.log(mus_safe), torch.ones_like(mus_safe)) - torch.log(sigs)
+        
         if components != 1:
             return self.rhosprior.log_prob(rhos) + lp.sum()
         return lp.sum()
@@ -177,7 +181,8 @@ class dataset():
         indices = argsort(-prov_rhos)
         prov_mus, prov_sigs, prov_rhos = prov_mus[indices], prov_sigs[indices], prov_rhos[indices]
 
-        self.ML_estimated = (torch.tensor(prov_mus), torch.tensor(prov_sigs), torch.tensor(prov_rhos))  # make sure the Gaussian mixture model is not negative
+        self.ML_estimated = (torch.tensor(prov_mus).clip(self.Nmin+.01), 
+                             torch.tensor(prov_sigs), torch.tensor(prov_rhos))  # make sure the Gaussian mixture model is not negative
         return self.ML_estimated
     
     def get_lpkdil_n(self):

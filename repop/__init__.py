@@ -36,7 +36,7 @@ def theta2params(theta, components=weak_limit):
     """
     mus = torch.exp(theta[:components])
     sigs = torch.exp(theta[components:2*components])
-    rhos = torch.exp(theta[2*components:])
+    rhos = torch.softmax(theta[2*components:], dim=0)
     return mus, sigs, normalize(rhos)
 
 def params2theta(mus, sigs, rhos):
@@ -70,7 +70,7 @@ def dils_switch(dils, N, cutoff):
     dils_unique, inverse = torch.unique(dils, return_inverse=True, sorted=True)
     dils_num = dils_unique.size(0)
     logZdils, pdils = [], []
-    lp_antes = torch.zeros_like(n).float()
+    lp_antes = torch.zeros_like(n, dtype=torch.float64)
 
     for i in range(dils_num):
         d = dils_unique[i]
@@ -115,21 +115,20 @@ class dataset():
         # Use GPU if available.
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         # Convert counts and dilutions to column tensors.
-        self.counts = torch.tensor(counts.reshape(-1, 1))
-        self.dils = torch.tensor(dils.reshape(-1, 1))
+        self.counts = torch.as_tensor(counts, dtype=torch.long, device=self.device).reshape(-1, 1)
+        self.dils   = torch.as_tensor(dils,   dtype=torch.float64, device=self.device).reshape(-1, 1)
 
         self.ndatapoints = self.counts.size(0)
         self.cutoff = cutoff
 
         # Compute the maximum likelihood (naive) estimate: counts multiplied by the dilution factors.
-        self.ML = (counts * dils).clip(min=1).reshape(-1, 1)
+        self.ML = torch.clamp(self.counts * self.dils, min=1).reshape(-1, 1)
         self.Nmin = 0
-        self.Nmax = 2 * self.ML.max() + 1
-        self.width = torch.tensor(self.Nmax, device=self.device)
-        self.n = torch.arange(self.Nmax)
+        self.Nmax = int((2 * self.ML.max() + 1).item())
+        self.width = torch.tensor(self.Nmax, device=self.device, dtype=torch.float64)
+        self.n = torch.arange(self.Nmax, device=self.device, dtype=torch.long)
         
-        #self.lpkdil_n = get_lpkdil_n(self.counts,self.dils,self.n,cutoff,self.Nmax).to(self.device)
-        self.n = self.n.to(self.device)        
+        #self.lpkdil_n = get_lpkdil_n(self.counts,self.dils,self.n,cutoff,self.Nmax).to(self.device)  
 
         # Set the weak limit based on the number of datapoints.
         self.weaklimit = min(weak_limit, int(sqrt(self.counts.numel())))
@@ -156,6 +155,7 @@ class dataset():
         """
         mus, sigs, rhos = theta2params(theta, components)
         lpn_th = Igaussmix_loglike(self.n, mus, sigs, rhos)
+        self.lpkdil_n = self.get_lpkdil_n()
         lpkn_th = lpn_th + self.lpkdil_n
         ans = torch.logsumexp(lpkn_th, axis=1)
         if total:
@@ -166,8 +166,9 @@ class dataset():
         """
         Estimate mixture parameters from the naive maximum likelihood data using a Gaussian Mixture Model.
         """
-        gmm = GaussianMixture(n_components=components, covariance_type='full')
-        gmm.fit(self.ML)
+        X = self.ML.detach().reshape(-1, 1).cpu().numpy()   # float64 numpy array for sklearn
+        gmm = GaussianMixture(n_components=int(components), covariance_type='full')
+        gmm.fit(X)
         
         prov_mus  = gmm.means_.reshape(-1)
         prov_sigs = sqrt(gmm.covariances_).reshape(-1)
@@ -175,14 +176,21 @@ class dataset():
 
         # Clamp sigmas away from zero
         eps_sig = 1e-6
-        prov_sigs = np.clip(prov_sigs, eps_sig, None)
+        prov_sigs = prov_sigs.clip(eps_sig, None)
 
         # Sort the estimated parameters by their weights in descending order.
         indices = argsort(-prov_rhos)
         prov_mus, prov_sigs, prov_rhos = prov_mus[indices], prov_sigs[indices], prov_rhos[indices]
 
-        self.ML_estimated = (torch.tensor(prov_mus).clip(self.Nmin+.01), 
-                             torch.tensor(prov_sigs), torch.tensor(prov_rhos))  # make sure the Gaussian mixture model is not negative
+        dtype = torch.float64
+        dev   = self.device
+
+        self.ML_estimated = (
+            torch.as_tensor(prov_mus,  dtype=dtype, device=dev).clamp_min(self.Nmin + 0.01),
+            torch.as_tensor(prov_sigs, dtype=dtype, device=dev),
+            torch.as_tensor(prov_rhos, dtype=dtype, device=dev),
+        )
+
         return self.ML_estimated
     
     def get_lpkdil_n(self):
@@ -383,7 +391,7 @@ class dataset():
             label=r'Dilution $\times$ Counts'
         )
 
-        # Highlight the bin around zero counts in red (unchanged from your code)
+        # Highlight the bin around zero counts in red if there are any zero counts
         if torch.any(self.counts == 0):
             bin_edges = h[1]
             bin_heights = h[0]

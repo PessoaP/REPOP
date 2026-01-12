@@ -20,7 +20,17 @@ l10 = log(10)
 
 # Define lambda functions for common probability calculations.
 # log_comb computes the log of the binomial coefficient.
-log_comb = lambda n, k: sp_lgamma(n + 1) - sp_lgamma(k + 1) - sp_lgamma(n - k + 1)
+def log_comb(n, k):
+    # n, k can be integer tensors; mask uses integer logic
+    invalid = (k > n) | (k < 0)
+
+    # cast for lgamma
+    n = n.to(torch.float64)
+    k = k.to(torch.float64)
+
+    val = torch.lgamma(n + 1) - torch.lgamma(k + 1) - torch.lgamma(n - k + 1)
+    return torch.where(invalid, torch.full_like(val, -torch.inf), val)
+
 # binomial_loglike computes the log likelihood for a binomial outcome.
 binomial_loglike = lambda k, n, p: log_comb(n, k) + k * torch.log(p) + (n - k) * torch.log(1 - p)
 # gaussian_loglike computes the log likelihood of a Gaussian given data x, mean mu, and std dev sig.

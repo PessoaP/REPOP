@@ -54,7 +54,7 @@ for i, dt in enumerate(data_day[:4]):
     axes[f'lin{i}'].plot(x[x<120], p[x<120])
     axes[f'lin{i}'].set_xlim(0,100)
 
-    cts = (dt.counts * dt.dils).reshape(-1)
+    cts = (dt.counts * dt.dils).reshape(-1).detach().cpu().numpy()
     cts = cts[cts<100]
 
     axes[f'lin{i}'].hist(cts, alpha=0.5,

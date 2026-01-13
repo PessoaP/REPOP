@@ -25,8 +25,8 @@ def log_comb(n, k):
     invalid = (k > n) | (k < 0)
 
     # cast for lgamma
-    n = n.to(torch.float64)
-    k = k.to(torch.float64)
+    n = n.to(torch.float32)
+    k = k.to(torch.float32)
 
     val = torch.lgamma(n + 1) - torch.lgamma(k + 1) - torch.lgamma(n - k + 1)
     return torch.where(invalid, torch.full_like(val, -torch.inf), val)

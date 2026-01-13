@@ -1,4 +1,5 @@
 # %%
+import os
 import torch
 from repop import dataset,params2theta,theta2params,plot_sci_not
 import pandas as pd
@@ -50,6 +51,8 @@ for case in (cases.casem1, cases.casem2):
   [(axi[0].set_ylim((0,ymax[0])), axi[1].set_ylim((0,ymax[1])), plot_sci_not(axi[0]), plot_sci_not(axi[1])) for axi in axs]
 
   plt.tight_layout()
+
+  os.makedirs("graphs/synth", exist_ok=True)
   fig.savefig('graphs/synth/{}_all.png'.format(case.name),dpi=900)
 
 

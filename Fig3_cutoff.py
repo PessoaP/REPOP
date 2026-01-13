@@ -1,4 +1,5 @@
 # %%
+import os
 import torch
 from repop import *
 import pandas as pd
@@ -54,10 +55,12 @@ for (case,datapoints) in zip((cases.case2,cases.case3),(1000,500)):
     [axi.set_ylabel('Density', fontsize= ax[0].yaxis.label.get_size()) for axi in ax[1:]]
 
     #legend=False
-    for ct in np.log10(data.cutoff*torch.unique(data.dils).numpy()):
+    for ct in np.log10(data.cutoff * torch.unique(data.dils).detach().cpu().numpy()):
         ax[2].axvline(ct,color='red',linestyle='dashed')
 
     plt.tight_layout()
+
+    os.makedirs("graphs/synth", exist_ok=True)
     fig.savefig('graphs/synth/'+case.name,dpi=900)
 
 

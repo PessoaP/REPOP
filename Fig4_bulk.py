@@ -1,4 +1,5 @@
 # %%
+import os
 import torch
 from repop import dataset,params2theta,theta2params
 from matplotlib import pyplot as plt

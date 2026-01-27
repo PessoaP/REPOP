@@ -37,7 +37,7 @@ def theta2params(theta, components=weak_limit):
     mus = torch.exp(theta[:components])
     sigs = torch.exp(theta[components:2*components])
     rhos = torch.softmax(theta[2*components:], dim=0)
-    return mus, sigs, rhos
+    return mus, sigs, normalize(rhos)
 
 def params2theta(mus, sigs, rhos):
     """
@@ -70,7 +70,7 @@ def dils_switch(dils, N, cutoff):
     dils_unique, inverse = torch.unique(dils, return_inverse=True, sorted=True)
     dils_num = dils_unique.size(0)
     logZdils, pdils = [], []
-    lp_antes = torch.zeros_like(n, dtype=torch.float32)
+    lp_antes = torch.zeros_like(n, dtype=torch.float64)
 
     for i in range(dils_num):
         d = dils_unique[i]
@@ -116,7 +116,7 @@ class dataset():
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         # Convert counts and dilutions to column tensors.
         self.counts = torch.as_tensor(counts, dtype=torch.long, device=self.device).reshape(-1, 1)
-        self.dils   = torch.as_tensor(dils,   dtype=torch.float32, device=self.device).reshape(-1, 1)
+        self.dils   = torch.as_tensor(dils,   dtype=torch.float64, device=self.device).reshape(-1, 1)
 
         self.ndatapoints = self.counts.size(0)
         self.cutoff = cutoff
@@ -125,7 +125,7 @@ class dataset():
         self.ML = torch.clamp(self.counts * self.dils, min=1).reshape(-1, 1)
         self.Nmin = 0
         self.Nmax = int((2 * self.ML.max() + 1).item())
-        self.width = torch.tensor(self.Nmax, device=self.device, dtype=torch.float32)
+        self.width = torch.tensor(self.Nmax, device=self.device, dtype=torch.float64)
         self.n = torch.arange(self.Nmax, device=self.device, dtype=torch.long)
         
         #self.lpkdil_n = get_lpkdil_n(self.counts,self.dils,self.n,cutoff,self.Nmax).to(self.device)  
@@ -155,8 +155,7 @@ class dataset():
         """
         mus, sigs, rhos = theta2params(theta, components)
         lpn_th = Igaussmix_loglike(self.n, mus, sigs, rhos)
-        if not hasattr(self, "lpkdil_n") or self.lpkdil_n is None:
-            self.lpkdil_n = self.get_lpkdil_n()
+        self.lpkdil_n = self.get_lpkdil_n()
         lpkn_th = lpn_th + self.lpkdil_n
         ans = torch.logsumexp(lpkn_th, axis=1)
         if total:
@@ -167,7 +166,7 @@ class dataset():
         """
         Estimate mixture parameters from the naive maximum likelihood data using a Gaussian Mixture Model.
         """
-        X = self.ML.detach().reshape(-1, 1).cpu().numpy()   # float32 numpy array for sklearn
+        X = self.ML.detach().reshape(-1, 1).cpu().numpy()   # float64 numpy array for sklearn
         gmm = GaussianMixture(n_components=int(components), covariance_type='full')
         gmm.fit(X)
         
@@ -183,7 +182,7 @@ class dataset():
         indices = argsort(-prov_rhos)
         prov_mus, prov_sigs, prov_rhos = prov_mus[indices], prov_sigs[indices], prov_rhos[indices]
 
-        dtype = torch.float32
+        dtype = torch.float64
         dev   = self.device
 
         self.ML_estimated = (
@@ -309,7 +308,7 @@ class dataset():
         """
         Plot a histogram of the raw counts (ignoring dilution) on the provided axis.
         """
-        h = ax.hist(self.counts.reshape(-1).detach().cpu().numpy(), alpha=0.25, bins=15, density=True)
+        h = ax.hist(self.counts.reshape(-1), alpha=0.25, bins=15, density=True)
         ax.set_xlabel('Counts', fontsize=15)
         ax.set_ylabel('Density', fontsize=15)
         return h
@@ -318,10 +317,10 @@ class dataset():
         """
         Plot an image (heatmap) of counts grouped by dilution.
         """
-        dils = torch.unique(self.dils).detach().cpu()
+        dils = torch.unique(self.dils)
         g = []
         # For each unique dilution value (sorted in descending order), compute the histogram of counts.
-        for dil in dils[torch.argsort(-dils)]:
+        for dil in dils[argsort(-dils)]:
             # Try to use the cutoff if available.
             g_dil = torch.zeros(self.counts.max() + 1, dtype=int)
             try:
@@ -329,8 +328,6 @@ class dataset():
             except:
                 pass
             k, fk = torch.unique(self.counts[self.dils == dil], return_counts=True)
-            k = k.detach().cpu()
-            fk = fk.detach().cpu()
             g_dil[k] += fk
             g.append(g_dil.numpy())
 
@@ -369,73 +366,76 @@ class dataset():
         ax.plot(x, p, label=r'REPOP')
         if th_gt is not None:
             p_gt = torch.exp(Igaussmix_loglike(x, *theta2params(th_gt, th_gt.size(0) // 3)))
-            ax.plot(x, p_gt.detach().cpu(), label=r'Ground truth', color='k')
-        h_high = ax.hist((self.counts * self.dils).reshape(-1).detach().cpu().numpy(), alpha=0.5,
+            ax.plot(x, p_gt, label=r'Ground truth', color='k')
+        h_high = ax.hist((self.counts * self.dils).reshape(-1), alpha=0.5,
                             bins=bins, density=True,
                             label=r'Dilution $\times$ Counts')
         
     def log_plots(self, ax, th_gt=None, bins=30, show_zero=False):
-        # --- Reconstruction in log-space (n >= 1 only)
+        # Get reconstruction in log-space + mass at zero
         if show_zero:
-            n_logspace, p_logspace, p0 = self.get_logreconstruction(cpu=True, show_zero=True)
-            p0 = float(p0)  # ensure scalar
+            n_logspace, p_logspace, p0 = self.get_logreconstruction(cpu=True, show_zero=show_zero)
         else:
-            n_logspace, p_logspace = self.get_logreconstruction(cpu=True, show_zero=False)
+            n_logspace, p_logspace = self.get_logreconstruction(cpu=True, show_zero=show_zero)
             p0 = None
 
-        # --- Plot REPOP reconstruction
-        repop_label = r'REPOP'
-        if show_zero and p0 is not None:
-            repop_label += rf' ($P(N=0)={p0:.2e}$)'
+        # Plot the reconstructed density over log10(n) for n >= 1
+        ax.plot(n_logspace, p_logspace, label=r'REPOP')
 
-        ax.plot(n_logspace, p_logspace, label=repop_label)
-
-        # --- Histogram of log10(dilution * counts)
-        hist_np = (
-            torch.log10(self.counts * self.dils)
-            .clamp(min=0)
-            .reshape(-1)
-            .detach()
-            .cpu()
-            .numpy()
-        )
-
+        # Histogram of log10(dilution * counts), still fine
         h = ax.hist(
-            hist_np,
+            torch.log10((self.counts * self.dils)).clamp(0).reshape(-1),
             alpha=0.5,
             bins=bins,
             density=True,
             label=r'Dilution $\times$ Counts'
         )
 
-        # --- Highlight zero-count bin (visual cue only)
+        # Highlight the bin around zero counts in red if there are any zero counts
         if torch.any(self.counts == 0):
-            bin_edges, bin_heights = h[1], h[0]
+            bin_edges = h[1]
+            bin_heights = h[0]
             for i in range(len(bin_edges) - 1):
                 if bin_edges[i] <= 0 < bin_edges[i + 1]:
+                    bin_zero_index = i
                     ax.bar(
-                        (bin_edges[i] + bin_edges[i + 1]) / 2,
+                        (bin_edges[bin_zero_index] + bin_edges[bin_zero_index + 1]) / 2,
                         bin_heights[i],
-                        width=bin_edges[i + 1] - bin_edges[i],
+                        width=bin_edges[bin_zero_index + 1] - bin_edges[bin_zero_index],
                         alpha=0.25,
-                        color='red',
+                        color='red'
                     )
                     break
 
-        # --- Optional ground truth overlay
-        ymax = float(p_logspace.max())
+        # NEW: show P(N=0) as a separate marker
+        if p0 is not None and p0 > 0:
+            # Put it slightly to the left of the plotted domain
+            x_marker = n_logspace.min() - 0.3  # shift left a bit
+            ax.scatter([x_marker], [p0], marker='o')
+            ax.text(
+                x_marker,
+                p0,
+                f"P(0)={p0:.2e}",
+                ha='right',
+                va='bottom',
+                rotation=90,
+                fontsize=8
+            )
+
+            ax.set_ylim(0, 1.1 * max(p_logspace.max(), p0 if p0 > 0 else 0.0))
+        else:
+            ax.set_ylim(0, 1.1 * p_logspace.max())
 
         if th_gt is not None:
+            # Ground truth, only for n >= 1; that's fine.
             x_pos = torch.pow(10, n_logspace)
             p_gt = torch.exp(
                 Igaussmix_loglike(x_pos, *theta2params(th_gt, th_gt.size(0) // 3))
             )
             y_gt = p_gt * x_pos * log(10.0)
             ax.plot(n_logspace, y_gt, label=r'Ground truth', color='k')
-            ymax = max(ymax, float(y_gt.max()))
+            ax.set_ylim(0,1.1 * max(p_logspace.max(),y_gt.max(),p0 if p0 > 0 else 0.0))
 
-        # --- Axes formatting
-        ax.set_ylim(0, 1.1 * ymax)
         ax.set_xlim(h[1][0] * 0.9, h[1][-1] * 1.01)
         ax.set_xlabel(r'$\log_{10}$ (Number of bacteria)', fontsize=15)
         ax.set_ylabel('Density')

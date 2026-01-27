@@ -308,7 +308,7 @@ class dataset():
         """
         Plot a histogram of the raw counts (ignoring dilution) on the provided axis.
         """
-        h = ax.hist(self.counts.reshape(-1), alpha=0.25, bins=15, density=True)
+        h = ax.hist(self.counts.reshape(-1).cpu(), alpha=0.25, bins=15, density=True)
         ax.set_xlabel('Counts', fontsize=15)
         ax.set_ylabel('Density', fontsize=15)
         return h
@@ -367,7 +367,7 @@ class dataset():
         if th_gt is not None:
             p_gt = torch.exp(Igaussmix_loglike(x, *theta2params(th_gt, th_gt.size(0) // 3)))
             ax.plot(x, p_gt, label=r'Ground truth', color='k')
-        h_high = ax.hist((self.counts * self.dils).reshape(-1), alpha=0.5,
+        h_high = ax.hist((self.counts * self.dils).cpu().reshape(-1), alpha=0.5,
                             bins=bins, density=True,
                             label=r'Dilution $\times$ Counts')
         
@@ -384,7 +384,7 @@ class dataset():
 
         # Histogram of log10(dilution * counts), still fine
         h = ax.hist(
-            torch.log10((self.counts * self.dils)).clamp(0).reshape(-1),
+            torch.log10((self.counts * self.dils)).cpu().clamp(0).reshape(-1),
             alpha=0.5,
             bins=bins,
             density=True,

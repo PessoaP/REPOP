@@ -209,7 +209,8 @@ class dataset():
         self.lpkdil_n = self.get_lpkdil_n()
 
         if components == weak_limit:
-            components = self.weaklimit #If no number of components where specified it will change the smallest number of components between the default and the square root of the number of datapoind
+            components = self.weaklimit
+            # If no number of components where specified it will change the smallest number of components between the default and the square root of the number of data points
         if not torch.cuda.is_available():
             warnings.warn( "CUDA-compatible GPU not detected. REPOP is optimized for working on GPU, and performance may be significantly slower on a CPU." )
 
@@ -317,7 +318,7 @@ class dataset():
         """
         Plot an image (heatmap) of counts grouped by dilution.
         """
-        dils = torch.unique(self.dils)
+        dils = torch.unique(self.dils.cpu())
         g = []
         # For each unique dilution value (sorted in descending order), compute the histogram of counts.
         for dil in dils[argsort(-dils)]:
@@ -327,7 +328,7 @@ class dataset():
                 g_dil = torch.zeros(self.cutoff + 1, dtype=int)
             except:
                 pass
-            k, fk = torch.unique(self.counts[self.dils == dil], return_counts=True)
+            k, fk = torch.unique(self.counts[self.dils == dil].cpu(), return_counts=True)
             g_dil[k] += fk
             g.append(g_dil.numpy())
 
@@ -377,7 +378,7 @@ class dataset():
             n_logspace, p_logspace, p0 = self.get_logreconstruction(cpu=True, show_zero=show_zero)
         else:
             n_logspace, p_logspace = self.get_logreconstruction(cpu=True, show_zero=show_zero)
-            p0 = None
+            p0 = 0
 
         # Plot the reconstructed density over log10(n) for n >= 1
         ax.plot(n_logspace, p_logspace, label=r'REPOP')
@@ -407,8 +408,9 @@ class dataset():
                     )
                     break
 
+        
         # NEW: show P(N=0) as a separate marker
-        if p0 is not None and p0 > 0:
+        if show_zero and p0 > 0:
             # Put it slightly to the left of the plotted domain
             x_marker = n_logspace.min() - 0.3  # shift left a bit
             ax.scatter([x_marker], [p0], marker='o')
@@ -474,7 +476,7 @@ class dataset():
             ax[1].legend(fontsize=10)
         plt.tight_layout()
         if filename is not None:
-            plt.savefig(filename, dpi=500)
+            plt.savefig(filename, dpi=900)
         return fig
     
 def plot_sci_not(ax):

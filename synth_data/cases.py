@@ -1,8 +1,6 @@
 import numpy as np
 import pandas as pd
 
-seed=42
-np.random.seed(seed)
 
 def multinomial_with_completion(n, probs):
     """
@@ -121,3 +119,5 @@ if __name__ == "__main__":
     case0.sample_save()
     casem1.sample_save()
     casem2.sample_save()
+
+    

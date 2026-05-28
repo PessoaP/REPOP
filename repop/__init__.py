@@ -185,11 +185,10 @@ class dataset():
         dtype = torch.float64
         dev   = self.device
 
-        self.ML_estimated = (
-            torch.as_tensor(prov_mus,  dtype=dtype, device=dev).clamp_min(self.Nmin + 0.01),
-            torch.as_tensor(prov_sigs, dtype=dtype, device=dev),
-            torch.as_tensor(prov_rhos, dtype=dtype, device=dev),
-        )
+        self.ML_estimated = (torch.as_tensor(prov_mus,  dtype=dtype, device=dev).clamp_min(self.Nmin + 0.01),
+                             torch.as_tensor(prov_sigs, dtype=dtype, device=dev),
+                             torch.as_tensor(prov_rhos, dtype=dtype, device=dev),
+                             )
 
         return self.ML_estimated
     
@@ -443,7 +442,7 @@ class dataset():
         ax.set_ylabel('Density')
 
 
-    def make_plot(self, filename=None, th_gt=None, xlabel='real', legend=True):
+    def make_plot(self, filename=None, th_gt=None, xlabel='real', legend=True, **kwargs):
         """
         Create a combined plot for the dataset.
         If the dilution schedule is constant, plot a histogram of counts; otherwise, plot an imshow of dilutions
@@ -476,7 +475,10 @@ class dataset():
             ax[1].legend(fontsize=10)
         plt.tight_layout()
         if filename is not None:
-            plt.savefig(filename, dpi=900)
+            if filename.endswith('.svg'):
+                plt.savefig(filename, transparent=True, **kwargs)
+            elif filename.endswith('.png'):
+                plt.savefig(filename, dpi=900, **kwargs)
         return fig
     
 def plot_sci_not(ax):

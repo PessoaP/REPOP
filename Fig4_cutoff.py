@@ -5,6 +5,7 @@ from repop import *
 import pandas as pd
 from matplotlib import pyplot as plt
 from synth_data import cases
+from Fig3_amount import rel_error, KL_GT
 
 import numpy as np
 
@@ -15,11 +16,6 @@ def load_dataset(filename,Nmax=10**1000,remove_zeros=True,cutoff=-1):
     if remove_zeros:
         cts,dils = cts[cts!=0],dils[cts!=0]
     return dataset(cts,dils,cutoff)
-
-def rel_error(data,case):
-    mus,sigs,rhos = data.ev
-    rel_error = torch.abs(mus.cpu().reshape(-1,1)/case.mus-1)
-    return torch.sum(rel_error.min(axis=1)[0]*rhos.cpu())
 
 # %%
 def load_data_gt(case,datapoints,cutoff=True):
@@ -33,15 +29,17 @@ def load_data_gt(case,datapoints,cutoff=True):
 
 # %%
 for (case,datapoints) in zip((cases.case2,cases.case3),(1000,500)):
-    print(case.name)
+    print(case.name, 'Y')
     
     data,th_gt =  load_data_gt(case,datapoints,True)
     data.evaluate()
     print('Relative error -- Threshold', rel_error(data,case))
+    print('KL divergence -- Threshold', KL_GT(data,case))
 
     data_noTH,th_gt =  load_data_gt(case,datapoints,cutoff=False)
     data_noTH.evaluate()
     print('Relative error - No cutoff', rel_error(data_noTH,case))
+    print('KL divergence - No cutoff', KL_GT(data_noTH,case))
 
     fig,ax = plt.subplots(1,3,figsize=(12,3))
     data.dil_imshow(ax[0],fig)
@@ -61,6 +59,5 @@ for (case,datapoints) in zip((cases.case2,cases.case3),(1000,500)):
     plt.tight_layout()
 
     os.makedirs("graphs/synth", exist_ok=True)
-    fig.savefig('graphs/synth/'+case.name,dpi=900)
-
+    fig.savefig('graphs/synth/'+case.name+'.svg',transparent=True)
 

@@ -88,7 +88,7 @@ axes['lin3'].set_xlabel('Number of bacteria', fontsize=15)
 axes['log3'].set_xlabel(r'$\log_{10}$ (Number of bacteria)', fontsize=15)
 
 plt.tight_layout()
-plt.savefig('graphs/worms_mosaic.png', dpi=500)
+plt.savefig('graphs/worms_mosaic.svg', transparent=True)
 
 
 

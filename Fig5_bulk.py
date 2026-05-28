@@ -45,8 +45,7 @@ ax[1].legend()
 xlim = ax[1].get_xlim()
 ax[1].set_ylim(0,2.4)
 
-plt.savefig('graphs/3dils.png',dpi=500)
-
+plt.savefig('graphs/3dils.svg',transparent=True)
 
 
 
@@ -73,7 +72,7 @@ plt.tight_layout()
 ax[1].legend()
 ax[1].set_ylim(0,2.6)
 
-plt.savefig('graphs/3dils_synth.png',dpi=500)
+plt.savefig('graphs/3dils_synth.svg',transparent=True)
 
 
 

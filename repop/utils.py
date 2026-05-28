@@ -3,8 +3,7 @@ from scipy.special import gammaln
 import numpy as np
 from numpy import log, pi
 
-#General mathematical utilities for REPOP
-
+# General mathematical utilities for REPOP
 # Precompute constant values used in the Gaussian likelihood function.
 lsqrt2pi = (1 / 2) * log(2 * pi)
 l10 = log(10)

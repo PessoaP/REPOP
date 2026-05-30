@@ -47,9 +47,9 @@ for (case,datapoints) in zip((cases.case2,cases.case3),(1000,500)):
     data_noTH.log_plots(ax[2],th_gt)
 
 
-    ax[1].set_title('Accounting for cutoff (model 3)',fontsize=12)
+    ax[1].set_title('Accounting for cutoff (Model 3)',fontsize=12)
     ax[1].legend()
-    ax[2].set_title('Not accounting for cutoff (model 2)',fontsize=12)
+    ax[2].set_title('Not accounting for cutoff (Model 2)',fontsize=12)
     [axi.set_ylabel('Density', fontsize= ax[0].yaxis.label.get_size()) for axi in ax[1:]]
 
     #legend=False

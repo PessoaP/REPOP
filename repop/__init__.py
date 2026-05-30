@@ -5,7 +5,6 @@ random.seed(42)
 
 from sklearn.mixture import GaussianMixture  # For the naive fitting of a Gaussian mixture model
 from matplotlib import pyplot as plt
-from matplotlib.ticker import ScalarFormatter, AutoLocator, FuncFormatter
 import warnings
 
 from .utils import *
@@ -480,19 +479,7 @@ class dataset():
             elif filename.endswith('.png'):
                 plt.savefig(filename, dpi=900, **kwargs)
         return fig
-    
-def plot_sci_not(ax):
-    
-    # Set scientific notation on both axes
-    formatter = ScalarFormatter(useMathText=True)
-    formatter.set_scientific(True)
-    formatter.set_powerlimits((-1, 1))  # Force scientific notation when necessary
-    
-    ax.xaxis.set_major_formatter(formatter)
-    ax.yaxis.set_major_formatter(formatter)
 
-    ax.xaxis.set_major_locator(AutoLocator())
-    ax.yaxis.set_major_locator(AutoLocator())
     
 
 def set_gt(mus,sigs,rhos):

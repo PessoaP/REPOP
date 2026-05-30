@@ -2,6 +2,8 @@ import torch
 from scipy.special import gammaln
 import numpy as np
 from numpy import log, pi
+from matplotlib import pyplot as plt
+from matplotlib.ticker import ScalarFormatter, AutoLocator, FuncFormatter
 
 # General mathematical utilities for REPOP
 # Precompute constant values used in the Gaussian likelihood function.
@@ -100,3 +102,16 @@ def sample_from_logps(logps, n_samples=10, pseudo_sampling=True):
     samples = ((cum_probs.unsqueeze(2) >= U.unsqueeze(1)).int()).argmax(dim=1)
 
     return samples
+    
+def plot_sci_not(ax):
+    
+    # Set scientific notation on both axes
+    formatter = ScalarFormatter(useMathText=True)
+    formatter.set_scientific(True)
+    formatter.set_powerlimits((-1, 1))  # Force scientific notation when necessary
+    
+    ax.xaxis.set_major_formatter(formatter)
+    ax.yaxis.set_major_formatter(formatter)
+
+    ax.xaxis.set_major_locator(AutoLocator())
+    ax.yaxis.set_major_locator(AutoLocator())

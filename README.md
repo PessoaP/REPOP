@@ -9,7 +9,7 @@ A more detailed explanation is available in our manuscript:
 [Available on eLife](https://doi.org/10.7554/eLife.107122.1)
 
 <div style="background-color:white; display:inline-block; padding:10px;">
-<img src="https://github.com/PessoaP/REPOP/blob/main/graphs/fig1.jpg?raw=true" width="600"/>
+<img src="https://github.com/PessoaP/REPOP/blob/main/graphs/f1.png?raw=true" width="600"/>
 </div>
 
 REPOP is optimized for ease of use and computational efficiency. While it has minimal dependencies, it benefits significantly from GPU acceleration.

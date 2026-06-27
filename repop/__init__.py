@@ -397,12 +397,11 @@ class dataset():
             for i in range(len(bin_edges) - 1):
                 if bin_edges[i] <= 0 < bin_edges[i + 1]:
                     bin_zero_index = i
-                    ax.bar(
-                        (bin_edges[bin_zero_index] + bin_edges[bin_zero_index + 1]) / 2,
-                        bin_heights[i],
-                        width=bin_edges[bin_zero_index + 1] - bin_edges[bin_zero_index],
-                        alpha=0.25,
-                        color='red'
+                    ax.bar((bin_edges[bin_zero_index] + bin_edges[bin_zero_index + 1]) / 2,
+                           bin_heights[i],
+                           width=bin_edges[bin_zero_index + 1] - bin_edges[bin_zero_index],
+                           alpha=0.25,
+                           color='red'
                     )
                     break
 

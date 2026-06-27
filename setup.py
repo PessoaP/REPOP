@@ -8,6 +8,7 @@ setup(
     install_requires=["torch",
                       "numpy",
                       "matplotlib",
+                      "pandas"
                       "scikit-learn"],
     author="Pedro Pessoa",
     author_email="ppessoa@asu.edu",
